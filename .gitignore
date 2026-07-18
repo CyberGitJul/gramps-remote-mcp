@@ -1,0 +1,19 @@
+# Secrets / local environment — never commit real credentials
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Test / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local working notes — not part of the public repo
+PROGRESS.md
