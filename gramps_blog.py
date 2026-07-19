@@ -164,3 +164,31 @@ class BlogMixin:
                 self._request("PUT", f"/api/sources/{source['handle']}", json_body=source)
             updated.append("body")
         return {"gramps_id": gramps_id, "updated": updated}
+
+    def delete_blog_post(self, gramps_id, confirm=False):
+        """Delete a blog post. DESTRUCTIVE — requires confirm=True.
+
+        Deletes the Source, guards that the source count drops by exactly one,
+        then cleans up the body note(s) if now orphaned (shared notes kept).
+        `confirm` must be the literal True. Returns before/after counts and the
+        deleted note handles.
+        """
+        if confirm is not True:
+            raise ValueError("delete_blog_post requires confirm=True (destructive)")
+        source = self._get_blog_source(gramps_id)
+        note_handles = source.get("note_list") or []
+        count_before = self.count_sources()
+        self._request("DELETE", f"/api/sources/{source['handle']}")
+        count_after = self.count_sources()
+        if count_after != count_before - 1:
+            raise BlogPostDeleteCountMismatchError(
+                f"Source count did not drop by one: {count_before} -> {count_after}"
+            )
+        deleted_notes = self._delete_orphaned_notes(note_handles)
+        return {
+            "gramps_id": gramps_id,
+            "deleted": True,
+            "count_before": count_before,
+            "count_after": count_after,
+            "deleted_notes": deleted_notes,
+        }

@@ -4,7 +4,7 @@ from urllib.parse import quote as _quote
 import pytest
 import requests
 
-from gramps_blog import BlogPostNotFoundError
+from gramps_blog import BlogPostDeleteCountMismatchError, BlogPostNotFoundError
 from gramps_client import GrampsClient
 
 
@@ -241,3 +241,44 @@ def test_update_blog_post_body_creates_note_when_source_has_none():
     assert put.args[:2] == ("PUT", "/api/sources/sH")
     assert put.kwargs["json_body"]["note_list"] == ["nNew"]
     assert result["updated"] == ["body"]
+
+
+def test_delete_blog_post_requires_confirm_true():
+    client = make_client()
+    client._request = MagicMock()
+    with pytest.raises(ValueError):
+        client.delete_blog_post("S0002", confirm=False)
+    client._request.assert_not_called()  # no request when unconfirmed
+
+
+def test_delete_blog_post_deletes_source_and_orphaned_note():
+    client = make_client()
+    source = {"gramps_id": "S0002", "handle": "sH", "note_list": ["nH"]}
+    client._request = MagicMock(side_effect=[
+        [source],                                      # _get_blog_source
+        [{"gramps_id": "S0002"}, {"gramps_id": "S0003"}],  # count before = 2
+        None,                                          # DELETE source
+        [{"gramps_id": "S0003"}],                      # count after = 1
+        {"handle": "nH", "backlinks": {}},             # note backlinks (orphaned)
+        None,                                          # DELETE note
+    ])
+
+    result = client.delete_blog_post("S0002", confirm=True)
+
+    assert result["deleted"] is True
+    assert result["count_before"] == 2 and result["count_after"] == 1
+    assert result["deleted_notes"] == ["nH"]
+    assert client._request.call_args_list[2].args[:2] == ("DELETE", "/api/sources/sH")
+
+
+def test_delete_blog_post_count_guard():
+    client = make_client()
+    source = {"gramps_id": "S0002", "handle": "sH", "note_list": []}
+    client._request = MagicMock(side_effect=[
+        [source],
+        [{"gramps_id": "S0002"}, {"gramps_id": "S0003"}],  # before = 2
+        None,
+        [{"gramps_id": "S0002"}, {"gramps_id": "S0003"}],  # after = 2 (unchanged!)
+    ])
+    with pytest.raises(BlogPostDeleteCountMismatchError):
+        client.delete_blog_post("S0002", confirm=True)

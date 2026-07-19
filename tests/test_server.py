@@ -411,3 +411,26 @@ def test_gramps_update_blog_post_calls_client():
 
     client.update_blog_post.assert_called_once_with("S0002", "new title", None, None)
     assert result["updated"] == ["title"]
+
+
+def test_gramps_delete_blog_post_registered_and_delegates_when_enabled():
+    client = MagicMock()
+    client.delete_blog_post.return_value = {
+        "gramps_id": "S0002", "deleted": True, "count_before": 2, "count_after": 1,
+        "deleted_notes": ["nH"],
+    }
+    _, tools = create_server(client, enable_destructive=True)
+
+    assert "gramps_delete_blog_post" in tools
+    result = tools["gramps_delete_blog_post"]("S0002", True)
+
+    client.delete_blog_post.assert_called_once_with("S0002", True)
+    assert result["deleted"] is True
+
+
+def test_gramps_delete_blog_post_hidden_when_disabled():
+    client = MagicMock()
+    _, tools = create_server(client, enable_destructive=False)
+
+    assert "gramps_delete_blog_post" not in tools
+    assert "gramps_create_blog_post" in tools  # non-destructive blog tools still present

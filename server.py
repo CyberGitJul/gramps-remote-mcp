@@ -263,6 +263,17 @@ def create_server(client, enable_destructive=None):
             """
             return client.delete_family(family_id, confirm)
 
+        @register
+        def gramps_delete_blog_post(gramps_id: str, confirm: bool = False) -> dict:
+            """Delete a blog post. DESTRUCTIVE — requires confirm=True.
+
+            Removes the Source and cleans up its body note if now orphaned
+            (shared notes are kept); guards that the source count drops by one.
+            Only present when the server was started with
+            GRAMPS_ENABLE_DESTRUCTIVE=1.
+            """
+            return client.delete_blog_post(gramps_id, confirm)
+
     return mcp, tools
 
 
