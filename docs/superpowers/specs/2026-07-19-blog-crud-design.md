@@ -1,9 +1,12 @@
-# Design — Welle 4: Blog-CRUD (Gramps Web MCP)
+# Design — Welle 4: Blog-CRUD + name-field tools (G12/G13) (Gramps Web MCP)
 
 **Status:** approved (brainstorming) · **Date:** 2026-07-19 · **Branch:** `feat/blog-crud`
 
-Adds MCP tools to manage **Gramps Web blog posts** over the REST API. Grounded in the
-live-verified API notes in [`docs/blog-crud.md`](../../blog-crud.md).
+Welle 4 bundles two independent concerns into one PR:
+- **Part A — Blog-CRUD:** 5 MCP tools to manage **Gramps Web blog posts** over the REST API.
+  Grounded in the live-verified API notes in [`docs/blog-crud.md`](../../blog-crud.md).
+- **Part B — name-field tools (G12/G13):** fill the name-editing gaps found in the PROD/INT diff
+  (HANDOFF §8e) — set a person's first name, add an alternate name of any type, swap primary↔alt.
 
 ## Background — the data model
 
@@ -54,10 +57,14 @@ replaces the string — so switching the flag never flips the type of already-pu
 
 ## Scope
 
-**In scope — full CRUD, 5 tools:**
+**In scope — Part A, full blog CRUD, 5 tools:**
 `gramps_list_blog_posts`, `gramps_get_blog_post`, `gramps_create_blog_post`,
 `gramps_update_blog_post`, `gramps_delete_blog_post` (the last is destructive, env-gated).
 Body format (plain text vs HTML) selectable per deployment via `GRAMPS_BLOG_BODY_FORMAT`.
+
+**In scope — Part B, name-field tools, 3 tools:** `gramps_set_first_name` (G12),
+`gramps_add_alternate_name` (G13a; `gramps_add_birth_name` becomes its alias),
+`gramps_swap_primary_name` (G13b). See the "Part B" section below.
 
 **Out of scope (YAGNI):** media / title image upload (`/api/media/`), galleries, Markdown or
 StyledText-range authoring, `If-Match` optimistic locking (unusable in 3.17.0 — always 412).
@@ -191,10 +198,52 @@ existing helpers naturally, with no indirection.
 1. Exact `HTML_CODE` type payload accepted by the API (string vs full object) — confirmed on INT.
 2. The server-side `bleach` allow-list (which HTML tags/attrs survive) — recorded from the smoke.
 
+## Part B — Name-field tools (G12/G13)
+
+Independent of the blog work (no body-format flag involved) — plain person-name edits that follow the
+existing `set_surname` / `add_birth_name` patterns exactly. All are non-destructive
+(`_guarded_write` → PUT, `{gramps_id, before, after}` snapshot). These live on `GrampsClient`
+directly (name editing is core-person, not blog), **not** in `BlogMixin`.
+
+### G12 — `gramps_set_first_name(gramps_id, first_name) -> dict`
+- New module-level `_first_name_mutation(first_name)` (mirrors `_surname_mutation`) sets
+  `person["primary_name"]["first_name"]`; `set_first_name = _guarded_write(gramps_id, _first_name_mutation(first_name))`.
+- Returns `{gramps_id, before, after}` (`_snapshot` already includes `primary_name`).
+- Server tool `gramps_set_first_name` — thin wrapper.
+
+### G13a — `gramps_add_alternate_name(gramps_id, surname, first_name=None, name_type="Birth Name") -> dict`
+- Generalize the existing `add_birth_name`: the built alt-name's `"type"` becomes the `name_type`
+  parameter instead of the hardcoded `"Birth Name"`; the rest of the name dict is unchanged.
+- `add_birth_name(gramps_id, surname, first_name=None)` becomes a thin alias:
+  `return self.add_alternate_name(gramps_id, surname, first_name, name_type="Birth Name")` — the
+  existing tool and its tests keep working unchanged.
+- Server: keep `gramps_add_birth_name`; add `gramps_add_alternate_name`.
+
+### G13b — `gramps_swap_primary_name(gramps_id, alt_index=0) -> dict`
+- `_guarded_write` with a mutation that swaps `person["primary_name"]` with
+  `person["alternate_names"][alt_index]` (the displaced primary becomes that alternate).
+- Guard: `alternate_names` shorter than `alt_index + 1` (or absent) → `ValueError` (nothing to swap),
+  no write.
+- Returns `{gramps_id, before, after}` (`_snapshot` already captures `primary_name` + `alternate_names`).
+- Server tool `gramps_swap_primary_name`.
+- **Live-verify:** confirm the API round-trips a swapped primary/alt cleanly (both are `Name` dicts;
+  check no required field on the primary is lost). Recorded during the INT smoke.
+
+### Testing (Part B)
+- Unit tests (mocked `_request`, mirroring the existing `set_surname` / `add_birth_name` tests):
+  - `set_first_name`: PUTs the person with the new `first_name`; count-guard unchanged;
+  - `add_alternate_name`: appends an alt carrying the given `name_type`; `add_birth_name` still appends
+    a `Birth Name` alt (regression test stays green);
+  - `swap_primary_name`: primary and `alternate_names[alt_index]` are swapped; out-of-range index
+    raises `ValueError` with no write.
+- `tests/test_server.py`: the 3 new tools are registered and delegate to the client.
+
 ## Delivery
 
-Own PR (`feat/blog-crud`), documented like PR #1/#2. README: add the 5 tools + a short "Blog posts"
-note (body format via `GRAMPS_BLOG_BODY_FORMAT`, default plain text; destructive delete behind the
-gate). `.env.example`: document `GRAMPS_BLOG_BODY_FORMAT` (default `text`, opt into `html`) next to
-the existing `GRAMPS_ENABLE_DESTRUCTIVE` entry. Update `docs/blog-crud.md` with the finalized
-HTML_CODE payload + bleach findings.
+One PR (`feat/blog-crud`), documented like PR #1/#2, covering **both parts**. README: add the 5 blog
+tools + a short "Blog posts" note (body format via `GRAMPS_BLOG_BODY_FORMAT`, default plain text;
+destructive delete behind the gate) **and** the 3 name-field tools (`gramps_set_first_name`,
+`gramps_add_alternate_name`, `gramps_swap_primary_name`). `.env.example`: document
+`GRAMPS_BLOG_BODY_FORMAT` (default `text`, opt into `html`) next to the existing
+`GRAMPS_ENABLE_DESTRUCTIVE` entry. Update `docs/blog-crud.md` with the finalized HTML_CODE payload +
+bleach findings. Update `HANDOFF-new-tools.md` §8e to mark G12/G13 done (like §8d did for G10/G11).
