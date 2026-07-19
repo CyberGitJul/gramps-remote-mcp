@@ -223,6 +223,20 @@ def create_server(client, enable_destructive=None):
         """
         return client.get_blog_post(gramps_id)
 
+    @register
+    def gramps_update_blog_post(
+        gramps_id: str,
+        title: str | None = None,
+        body: str | None = None,
+        author: str | None = None,
+    ) -> dict:
+        """Update a blog post's title, body, and/or author (only what you pass).
+
+        body is stored per the server's GRAMPS_BLOG_BODY_FORMAT and replaces the
+        existing note's text (keeping its type). Returns {gramps_id, updated}.
+        """
+        return client.update_blog_post(gramps_id, title, body, author)
+
     if enable_destructive:
         @register
         def gramps_delete_person(gramps_id: str, confirm: bool = False) -> dict:

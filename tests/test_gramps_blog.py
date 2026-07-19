@@ -171,3 +171,43 @@ def test_get_blog_post_non_404_http_error_propagates():
     client._request = MagicMock(side_effect=err)
     with pytest.raises(requests.HTTPError):
         client.get_blog_post("S0002")
+
+
+def test_update_blog_post_title_author_rmw_on_source():
+    client = make_client()
+    source = {"gramps_id": "S0002", "handle": "sH", "title": "old", "author": "old",
+              "note_list": ["nH"], "tag_list": ["tagBlog"]}
+    client._request = MagicMock(side_effect=[
+        [source],   # _get_blog_source
+        None,       # PUT source
+    ])
+
+    result = client.update_blog_post("S0002", title="new", author="newauth")
+
+    put = client._request.call_args_list[1]
+    assert put.args[:2] == ("PUT", "/api/sources/sH")
+    body = put.kwargs["json_body"]
+    assert body["title"] == "new" and body["author"] == "newauth"
+    assert body["tag_list"] == ["tagBlog"]  # RMW preserved (not blanked)
+    assert set(result["updated"]) == {"title", "author"}
+
+
+def test_update_blog_post_body_rmw_on_note_preserves_type():
+    client = make_client()
+    source = {"gramps_id": "S0002", "handle": "sH", "note_list": ["nH"]}
+    note = {"handle": "nH", "text": {"_class": "StyledText", "tags": [], "string": "old"},
+            "type": {"_class": "NoteType", "value": 24, "string": ""}}
+    client._request = MagicMock(side_effect=[
+        [source],   # _get_blog_source
+        note,       # GET note
+        None,       # PUT note
+    ])
+
+    result = client.update_blog_post("S0002", body="<p>new</p>")
+
+    put = client._request.call_args_list[2]
+    assert put.args[:2] == ("PUT", "/api/notes/nH")
+    body = put.kwargs["json_body"]
+    assert body["text"]["string"] == "<p>new</p>"
+    assert body["type"] == {"_class": "NoteType", "value": 24, "string": ""}  # type preserved
+    assert result["updated"] == ["body"]

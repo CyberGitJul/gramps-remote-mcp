@@ -131,3 +131,35 @@ class BlogMixin:
             "body_text": body_text,
             "note_gramps_id": note_gramps_id,
         }
+
+    def update_blog_post(self, gramps_id, title=None, body=None, author=None):
+        """Partial update of a blog post; only provided fields change.
+
+        title/author are Read-Modify-Written on the Source; body is RMW'd on the
+        first note's text.string (preserving the note's type). If the source has
+        no note yet, a body note is created (per blog_body_format) and attached.
+        Returns {gramps_id, updated: [changed field names]}.
+        """
+        source = self._get_blog_source(gramps_id)
+        updated = []
+        if title is not None:
+            source["title"] = title
+            updated.append("title")
+        if author is not None:
+            source["author"] = author
+            updated.append("author")
+        if title is not None or author is not None:
+            self._request("PUT", f"/api/sources/{source['handle']}", json_body=source)
+
+        if body is not None:
+            note_list = source.get("note_list") or []
+            if note_list:
+                note = self._request("GET", f"/api/notes/{note_list[0]}")
+                note["text"]["string"] = body
+                self._request("PUT", f"/api/notes/{note['handle']}", json_body=note)
+            else:
+                note_handle = self._create_body_note(body)
+                source.setdefault("note_list", []).append(note_handle)
+                self._request("PUT", f"/api/sources/{source['handle']}", json_body=source)
+            updated.append("body")
+        return {"gramps_id": gramps_id, "updated": updated}

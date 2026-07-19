@@ -400,3 +400,14 @@ def test_gramps_get_blog_post_calls_client():
 
     client.get_blog_post.assert_called_once_with("S0002")
     assert result["gramps_id"] == "S0002"
+
+
+def test_gramps_update_blog_post_calls_client():
+    client = MagicMock()
+    client.update_blog_post.return_value = {"gramps_id": "S0002", "updated": ["title"]}
+    _, tools = create_server(client)
+
+    result = tools["gramps_update_blog_post"]("S0002", "new title")
+
+    client.update_blog_post.assert_called_once_with("S0002", "new title", None, None)
+    assert result["updated"] == ["title"]
