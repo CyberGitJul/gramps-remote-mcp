@@ -2,7 +2,9 @@ from unittest.mock import MagicMock
 from urllib.parse import quote as _quote
 
 import pytest
+import requests
 
+from gramps_blog import BlogPostNotFoundError
 from gramps_client import GrampsClient
 
 
@@ -110,9 +112,6 @@ def test_list_blog_posts_defaults_page_when_only_pagesize():
     assert "pagesize=10" in url
 
 
-from gramps_blog import BlogPostNotFoundError
-
-
 def test_get_blog_post_renders_body_html():
     client = make_client()
     client._request = MagicMock(side_effect=[
@@ -148,3 +147,27 @@ def test_get_blog_post_not_found_raises():
     client._request = MagicMock(return_value=[])
     with pytest.raises(BlogPostNotFoundError):
         client.get_blog_post("S9999")
+
+
+def test_get_blog_post_http_404_raises_blog_post_not_found():
+    # the live API 404s (NOT an empty 200 list) for an unknown gramps_id on the
+    # sources lookup; _get_blog_source must map that to BlogPostNotFoundError,
+    # like get_person does for PersonNotFoundError.
+    resp = MagicMock()
+    resp.status_code = 404
+    err = requests.HTTPError(response=resp)
+    client = make_client()
+    client._request = MagicMock(side_effect=err)
+    with pytest.raises(BlogPostNotFoundError):
+        client.get_blog_post("S9999")
+
+
+def test_get_blog_post_non_404_http_error_propagates():
+    # a non-404 HTTP error (e.g. 500) must NOT be masked as BlogPostNotFoundError.
+    resp = MagicMock()
+    resp.status_code = 500
+    err = requests.HTTPError(response=resp)
+    client = make_client()
+    client._request = MagicMock(side_effect=err)
+    with pytest.raises(requests.HTTPError):
+        client.get_blog_post("S0002")
