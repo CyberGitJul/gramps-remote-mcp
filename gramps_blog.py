@@ -159,7 +159,8 @@ class BlogMixin:
                 self._request("PUT", f"/api/notes/{note['handle']}", json_body=note)
             else:
                 note_handle = self._create_body_note(body)
-                source.setdefault("note_list", []).append(note_handle)
+                note_list.append(note_handle)
+                source["note_list"] = note_list
                 self._request("PUT", f"/api/sources/{source['handle']}", json_body=source)
             updated.append("body")
         return {"gramps_id": gramps_id, "updated": updated}

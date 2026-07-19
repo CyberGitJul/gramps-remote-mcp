@@ -211,3 +211,33 @@ def test_update_blog_post_body_rmw_on_note_preserves_type():
     assert body["text"]["string"] == "<p>new</p>"
     assert body["type"] == {"_class": "NoteType", "value": 24, "string": ""}  # type preserved
     assert result["updated"] == ["body"]
+
+
+def test_update_blog_post_no_fields_is_noop():
+    client = make_client()
+    source = {"gramps_id": "S0002", "handle": "sH", "title": "old", "author": "old",
+              "note_list": ["nH"], "tag_list": ["tagBlog"]}
+    client._request = MagicMock(side_effect=[[source]])  # only _get_blog_source is consumed
+
+    result = client.update_blog_post("S0002")
+
+    assert result == {"gramps_id": "S0002", "updated": []}
+    assert all(c.args[0] != "PUT" for c in client._request.call_args_list)
+
+
+def test_update_blog_post_body_creates_note_when_source_has_none():
+    client = make_client("text")
+    source = {"gramps_id": "S0002", "handle": "sH", "note_list": []}
+    client._request = MagicMock(side_effect=[
+        [source],   # _get_blog_source
+        [{"_class": "Note", "type": "add", "handle": "nNew",
+          "new": {"_class": "Note", "handle": "nNew"}}],  # _create_body_note -> _create_note POST
+        None,       # PUT source
+    ])
+
+    result = client.update_blog_post("S0002", body="<p>new</p>")
+
+    put = client._request.call_args_list[2]
+    assert put.args[:2] == ("PUT", "/api/sources/sH")
+    assert put.kwargs["json_body"]["note_list"] == ["nNew"]
+    assert result["updated"] == ["body"]
