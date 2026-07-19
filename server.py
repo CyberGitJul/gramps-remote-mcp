@@ -196,6 +196,15 @@ def create_server(client, enable_destructive=None):
         """
         return client.get_relations(gramps_id)
 
+    @register
+    def gramps_create_blog_post(title: str, body: str, author: str | None = None) -> str:
+        """Create a blog post (a Source tagged 'Blog' + a body note). Returns its Gramps ID.
+
+        `body` is stored per the server's GRAMPS_BLOG_BODY_FORMAT: plain text
+        (default) or HTML. Returns the new source gramps_id (e.g. 'S0002').
+        """
+        return client.create_blog_post(title, body, author)
+
     if enable_destructive:
         @register
         def gramps_delete_person(gramps_id: str, confirm: bool = False) -> dict:

@@ -45,3 +45,40 @@ def test_count_sources_counts_the_list():
     client._request = MagicMock(return_value=[{"gramps_id": "S0001"}, {"gramps_id": "S0002"}])
     assert client.count_sources() == 2
     assert client._request.call_args.args == ("GET", "/api/sources/?keys=gramps_id")
+
+
+def test_create_blog_post_posts_note_then_tagged_source():
+    client = make_client("text")
+    client._request = MagicMock(side_effect=[
+        [{"gramps_id": "S0001"}],                       # count_sources before
+        [{"name": "Blog", "handle": "tagBlog"}],        # _find_tag_handle (tags list)
+        [{"_class": "Note", "type": "add", "handle": "nH",
+          "new": {"_class": "Note", "handle": "nH"}}],  # POST note
+        [{"_class": "Source", "type": "add", "handle": "sH",
+          "new": {"_class": "Source", "handle": "sH", "gramps_id": "S0002"}}],  # POST source
+        [{"gramps_id": "S0001"}, {"gramps_id": "S0002"}],  # count_sources after
+    ])
+
+    gid = client.create_blog_post("My title", "Body text", author="Max")
+
+    assert gid == "S0002"
+    source_body = client._request.call_args_list[3].kwargs["json_body"]
+    assert client._request.call_args_list[3].args[:2] == ("POST", "/api/sources/")
+    assert source_body["title"] == "My title"
+    assert source_body["author"] == "Max"
+    assert source_body["note_list"] == ["nH"]
+    assert source_body["tag_list"] == ["tagBlog"]
+
+
+def test_create_blog_post_count_guard():
+    client = make_client("text")
+    client._request = MagicMock(side_effect=[
+        [{"gramps_id": "S0001"}],                       # before = 1
+        [{"name": "Blog", "handle": "tagBlog"}],
+        [{"_class": "Note", "type": "add", "handle": "nH", "new": {"_class": "Note", "handle": "nH"}}],
+        [{"_class": "Source", "type": "add", "handle": "sH", "new": {"_class": "Source", "handle": "sH", "gramps_id": "S0002"}}],
+        [{"gramps_id": "S0001"}],                       # after = 1 (no increase!)
+    ])
+    from gramps_blog import BlogPostCreateCountMismatchError
+    with pytest.raises(BlogPostCreateCountMismatchError):
+        client.create_blog_post("t", "b")

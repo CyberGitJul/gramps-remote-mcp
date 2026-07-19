@@ -247,6 +247,17 @@ def test_gramps_get_relations_calls_client():
     assert result["families"] == []
 
 
+def test_gramps_create_blog_post_calls_client():
+    client = MagicMock()
+    client.create_blog_post.return_value = "S0002"
+    _, tools = create_server(client)
+
+    result = tools["gramps_create_blog_post"]("My title", "Body", "Max")
+
+    client.create_blog_post.assert_called_once_with("My title", "Body", "Max")
+    assert result == "S0002"
+
+
 def test_gramps_set_family_parent_calls_client():
     client = MagicMock()
     client.set_family_parent.return_value = {

@@ -44,3 +44,28 @@ class BlogMixin:
             new_note = self._create_object("notes", note_dict)
             return new_note["handle"]
         return self._create_note(body)
+
+    def create_blog_post(self, title, body, author=None):
+        """Create a blog post: a Source tagged 'Blog' with a body Note.
+
+        The body's storage format follows blog_body_format (html/text). Guards
+        that the source count rises by exactly one. Returns the new source's
+        gramps_id.
+        """
+        count_before = self.count_sources()
+        tag_handle = self._get_or_create_tag("Blog")
+        note_handle = self._create_body_note(body)
+        source_dict = {
+            "_class": "Source",
+            "title": title,
+            "author": author or "",
+            "note_list": [note_handle],
+            "tag_list": [tag_handle],
+        }
+        new_source = self._create_object("sources", source_dict)
+        count_after = self.count_sources()
+        if count_after != count_before + 1:
+            raise BlogPostCreateCountMismatchError(
+                f"Source count did not rise by one: {count_before} -> {count_after}"
+            )
+        return new_source["gramps_id"]
