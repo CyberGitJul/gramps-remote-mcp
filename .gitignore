@@ -15,5 +15,10 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
+# CodeGraph local index — not part of the public repo
+.codegraph/
+
 # Local working notes — not part of the public repo
 PROGRESS.md
+HANDOFF-*.md
+docs/Progress_archive.md

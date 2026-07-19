@@ -54,8 +54,18 @@ def test_gramps_search_person_calls_client():
 
     result = tools["gramps_search_person"]("john")
 
-    client.search_person.assert_called_once_with("john")
+    client.search_person.assert_called_once_with("john", None)
     assert result == [{"gramps_id": "I0024", "first_name": "John", "surname": "Smith", "gender": 1}]
+
+
+def test_gramps_search_person_passes_limit():
+    client = MagicMock()
+    client.search_person.return_value = []
+    _, tools = create_server(client)
+
+    tools["gramps_search_person"]("prentl", 5)
+
+    client.search_person.assert_called_once_with("prentl", 5)
 
 
 def test_gramps_add_person_calls_client():
@@ -128,3 +138,109 @@ def test_gramps_get_descendants_defaults_to_grade1():
     tools["gramps_get_descendants"]("I0024")
 
     client.get_descendants.assert_called_once_with("I0024", 1)
+
+
+def test_gramps_get_object_counts_calls_client():
+    client = MagicMock()
+    client.object_counts.return_value = {"people": 160, "families": 50}
+    _, tools = create_server(client)
+
+    result = tools["gramps_get_object_counts"]()
+
+    client.object_counts.assert_called_once_with()
+    assert result == {"people": 160, "families": 50}
+
+
+def test_gramps_list_people_calls_client():
+    client = MagicMock()
+    client.list_people.return_value = [{"gramps_id": "I0001", "gender": 1}]
+    _, tools = create_server(client)
+
+    result = tools["gramps_list_people"](["gramps_id", "gender"], 2, 50)
+
+    client.list_people.assert_called_once_with(["gramps_id", "gender"], 2, 50)
+    assert result == [{"gramps_id": "I0001", "gender": 1}]
+
+
+def test_gramps_list_people_defaults():
+    client = MagicMock()
+    client.list_people.return_value = []
+    _, tools = create_server(client)
+
+    tools["gramps_list_people"]()
+
+    client.list_people.assert_called_once_with(None, None, None)
+
+
+def test_gramps_set_gender_bulk_calls_client():
+    client = MagicMock()
+    client.set_gender_bulk.return_value = {
+        "count_before": 2, "count_after": 2, "count_guard_ok": True,
+        "results": [], "errors": [],
+    }
+    _, tools = create_server(client)
+
+    items = [{"gramps_id": "I0031", "gender": 0}, {"gramps_id": "I0032", "gender": 1}]
+    result = tools["gramps_set_gender_bulk"](items)
+
+    client.set_gender_bulk.assert_called_once_with(items)
+    assert result["count_guard_ok"] is True
+
+
+def test_gramps_set_surname_bulk_calls_client():
+    client = MagicMock()
+    client.set_surname_bulk.return_value = {
+        "count_before": 1, "count_after": 1, "count_guard_ok": True,
+        "results": [], "errors": [],
+    }
+    _, tools = create_server(client)
+
+    items = [{"gramps_id": "I0036", "surname": "Prentl"}]
+    result = tools["gramps_set_surname_bulk"](items)
+
+    client.set_surname_bulk.assert_called_once_with(items)
+    assert result["count_before"] == 1
+
+
+def test_gramps_get_ancestors_calls_client():
+    client = MagicMock()
+    client.get_ancestors.return_value = {
+        "gramps_id": "I0031", "first_name": "Josef", "surname": "Prentl",
+        "gender": 1, "parents": [],
+    }
+    _, tools = create_server(client)
+
+    result = tools["gramps_get_ancestors"]("I0031", 2)
+
+    client.get_ancestors.assert_called_once_with("I0031", 2)
+    assert result == {
+        "gramps_id": "I0031", "first_name": "Josef", "surname": "Prentl",
+        "gender": 1, "parents": [],
+    }
+
+
+def test_gramps_get_ancestors_defaults_to_grade1():
+    # regression: omitting grade delegates with the default grade=1
+    client = MagicMock()
+    client.get_ancestors.return_value = {"gramps_id": "I0031", "parents": []}
+    _, tools = create_server(client)
+
+    tools["gramps_get_ancestors"]("I0031")
+
+    client.get_ancestors.assert_called_once_with("I0031", 1)
+
+
+def test_gramps_get_relations_calls_client():
+    client = MagicMock()
+    client.get_relations.return_value = {
+        "gramps_id": "I0036", "first_name": "Ala", "surname": "Prentl", "gender": 0,
+        "parent_families": [], "families": [],
+    }
+    _, tools = create_server(client)
+
+    result = tools["gramps_get_relations"]("I0036")
+
+    client.get_relations.assert_called_once_with("I0036")
+    assert result["gramps_id"] == "I0036"
+    assert result["parent_families"] == []
+    assert result["families"] == []
