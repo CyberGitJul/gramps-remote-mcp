@@ -12,15 +12,28 @@ every mutation is protected by before/after snapshots and record-count guards.
 
 ## Tools
 
-The server exposes 10 tools over the MCP **stdio** transport:
+The server exposes 16 tools over the MCP **stdio** transport.
+
+**Read**
 
 | Tool | Purpose |
 | --- | --- |
 | `gramps_get_person(gramps_id)` | Fetch the current live record for a person by Gramps ID (e.g. `I0024`). |
-| `gramps_search_person(query)` | Search people by first or last name (case-insensitive substring match). |
+| `gramps_search_person(query, limit=None)` | Search people (case-insensitive substring) across first name, surname, the combined `First Surname`, the nickname, and alternate/maiden names; optional result `limit`. |
+| `gramps_list_people(keys=None, page=None, pagesize=None)` | List people, optionally selecting fields (`keys`) and paginating (`page` is 1-based, `pagesize` caps rows). Omit both to return everyone. |
+| `gramps_get_object_counts()` | Return the tree's object counts (people, families, events, notes, media, …) — handy as a before/after guard. |
 | `gramps_get_descendants(gramps_id, grade=1)` | Return the person and their descendants as a nested JSON tree, `grade` generations deep. |
+| `gramps_get_ancestors(gramps_id, grade=1)` | Return the person and their ancestors as a nested JSON tree, `grade` generations up. |
+| `gramps_get_relations(gramps_id)` | Return a person's family context: parent families (father/mother slots) and own families (partner + children). Each person carries its own `gender`; father/mother are bloodline slots, not sex. |
+
+**Write**
+
+| Tool | Purpose |
+| --- | --- |
 | `gramps_set_gender(gramps_id, gender)` | Set a person's gender (`0`=Female, `1`=Male, `2`=Unknown, `3`=Other). |
 | `gramps_set_surname(gramps_id, surname, name_type=None)` | Set the primary surname, optionally the name type (e.g. `Married Name`). |
+| `gramps_set_gender_bulk(items)` | Set gender for many people in one call (`items` = `[{"gramps_id", "gender"}, …]`) under a single count-guard; best-effort, per-item results and errors. |
+| `gramps_set_surname_bulk(items)` | Set the primary surname for many people in one call (`items` = `[{"gramps_id", "surname", "name_type"?}, …]`) under a single count-guard; best-effort. |
 | `gramps_add_birth_name(gramps_id, surname, first_name=None)` | Add a `Birth Name` alternate-name entry. |
 | `gramps_add_person(first_name, surname, gender, birth_year=None, birth_quality=None, birth_year_to=None, note=None)` | Create a new person, tagged **Unbestätigt** (unconfirmed). Returns the new Gramps ID. |
 | `gramps_add_family(spouse_a_id, spouse_b_id=None)` | Create a family linking one or two spouses. Returns the new family's Gramps ID. |
@@ -126,8 +139,17 @@ Or run the Python script directly:
 - **Gender-based parent slots.** When creating a family, the spouse with gender Female is
   assigned as mother and the other as father; if gender doesn't disambiguate, call order
   decides deterministically.
-- **Structured descendant tree.** `gramps_get_descendants` returns a nested JSON tree
-  bounded to `grade` generations, rather than a flat list.
+- **Structured relative trees.** `gramps_get_descendants` and `gramps_get_ancestors`
+  return nested JSON trees bounded to `grade` generations, and `gramps_get_relations`
+  gives a person's full family context in one call — rather than flat lists.
+- **Bloodline ≠ gender.** In GEDCOM-imported data a family's `father`/`mother` slots
+  follow the bloodline, not sex. The relation/ancestor tools therefore never infer sex
+  from a slot: every person carries its own `gender`, and partners are resolved as "the
+  other slot" regardless of gender.
+- **Batch writes with one guard.** `gramps_set_gender_bulk` / `gramps_set_surname_bulk`
+  apply many updates under a single record-count guard. They are best-effort (not atomic):
+  a failing item is reported in `errors` and does not abort the rest, and the count guard
+  is reported (`count_guard_ok`) rather than raised so partial results are never lost.
 
 ## Development
 

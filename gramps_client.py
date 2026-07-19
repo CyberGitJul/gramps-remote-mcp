@@ -92,6 +92,37 @@ def _assign_parent_handles(person_a, person_b):
     return handle_a, handle_b
 
 
+def _name_strings(name):
+    """Searchable strings from a Name dict: first, surname, 'first surname', nick.
+
+    Used by search_person so a query can match a full name, a nickname, or an
+    alternate/maiden name — not just a bare first- or surname substring.
+    """
+    if not name:
+        return []
+    first = name.get("first_name") or ""
+    nick = name.get("nick") or ""
+    surname_list = name.get("surname_list") or []
+    surname = (surname_list[0].get("surname") or "") if surname_list else ""
+    return [first, surname, f"{first} {surname}".strip(), nick]
+
+
+def _gender_mutation(gender):
+    """Build a person-mutation that sets gender. Shared by single + bulk writes."""
+    def mutate(person):
+        person["gender"] = gender
+    return mutate
+
+
+def _surname_mutation(surname, name_type=None):
+    """Build a person-mutation that sets the primary surname (+ optional name type)."""
+    def mutate(person):
+        person["primary_name"]["surname_list"][0]["surname"] = surname
+        if name_type is not None:
+            person["primary_name"]["type"] = name_type
+    return mutate
+
+
 class GrampsClient:
     def __init__(self, base_url, username, password):
         self.base_url = base_url.rstrip("/")
@@ -125,7 +156,15 @@ class GrampsClient:
         return resp.json() if resp.content else None
 
     def get_person(self, gramps_id):
-        people = self._request("GET", f"/api/people/?gramps_id={gramps_id}")
+        # The live API 404s on an unknown gramps_id rather than returning an empty
+        # list, so map that to PersonNotFoundError; keep the empty-list guard too in
+        # case a deployment answers 200 []. Other HTTP errors propagate unchanged.
+        try:
+            people = self._request("GET", f"/api/people/?gramps_id={gramps_id}")
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 404:
+                raise PersonNotFoundError(gramps_id) from exc
+            raise
         if not people:
             raise PersonNotFoundError(gramps_id)
         return people[0]
@@ -137,6 +176,36 @@ class GrampsClient:
     def count_families(self):
         families = self._request("GET", "/api/families/?keys=gramps_id")
         return len(families)
+
+    def object_counts(self):
+        """Return the tree's object counts (people, families, events, ...).
+
+        Thin read-only wrapper over GET /api/metadata/ -> object_counts.
+        """
+        metadata = self._request("GET", "/api/metadata/")
+        return metadata["object_counts"]
+
+    def list_people(self, keys=None, page=None, pagesize=None):
+        """List people, optionally selecting fields and paginating.
+
+        Thin wrapper over GET /api/people/. `keys` selects returned fields
+        (?keys=a,b,c); `page` is 1-based and `pagesize` caps rows per page
+        (the server's only pagination mechanism — there is no offset/limit).
+        Omit page and pagesize to return every person.
+        """
+        # gramps-web-api only paginates when page >= 1; a bare pagesize is ignored
+        # and the full list comes back. Default page to 1 so pagesize actually caps.
+        if page is None and pagesize is not None:
+            page = 1
+        params = []
+        if keys:
+            params.append("keys=" + ",".join(keys))
+        if page is not None:
+            params.append(f"page={page}")
+        if pagesize is not None:
+            params.append(f"pagesize={pagesize}")
+        query = ("?" + "&".join(params)) if params else ""
+        return self._request("GET", f"/api/people/{query}")
 
     def get_family(self, family_id):
         families = self._request("GET", f"/api/families/?gramps_id={family_id}")
@@ -162,33 +231,73 @@ class GrampsClient:
             "tag_list": person.get("tag_list"),
         })
 
-    def _guarded_write(self, gramps_id, mutate_fn):
-        count_before = self.count_people()
+    def _write_person(self, gramps_id, mutate_fn):
+        """Fetch, snapshot, mutate, and PUT one person; return before/after.
+
+        No count guard here — the caller decides how to guard (per write, or once
+        around a whole batch). Shared by _guarded_write and _bulk_write.
+        """
         person = self.get_person(gramps_id)
         before = self._snapshot(person)
         mutate_fn(person)
         self._put_person(person["handle"], person)
+        after = self._snapshot(person)
+        return {"gramps_id": gramps_id, "before": before, "after": after}
+
+    def _guarded_write(self, gramps_id, mutate_fn):
+        count_before = self.count_people()
+        result = self._write_person(gramps_id, mutate_fn)
         count_after = self.count_people()
         if count_after != count_before:
             raise PersonCountMismatchError(
                 f"Person count changed: {count_before} -> {count_after}"
             )
-        after = self._snapshot(person)
-        return {"gramps_id": gramps_id, "before": before, "after": after}
+        return result
+
+    def _bulk_write(self, items, mutation_for):
+        """Apply a mutation to many people under a SINGLE count-guard.
+
+        Best-effort / not atomic: a failure on one item is captured in `errors`
+        and does not abort the rest. The count-guard wraps the whole batch and is
+        REPORTED via `count_guard_ok` (not raised) — raising after partial writes
+        would discard the per-person results the caller needs.
+        `mutation_for(item)` returns the mutate_fn for that item.
+        """
+        count_before = self.count_people()
+        results = []
+        errors = []
+        for item in items:
+            try:
+                gramps_id = item["gramps_id"]
+                results.append(self._write_person(gramps_id, mutation_for(item)))
+            except Exception as exc:
+                # item.get (not the local gramps_id) so a malformed item missing the
+                # "gramps_id" key is recorded as an error instead of aborting the batch.
+                errors.append(
+                    {"gramps_id": item.get("gramps_id"), "error": f"{type(exc).__name__}: {exc}"}
+                )
+        count_after = self.count_people()
+        return {
+            "count_before": count_before,
+            "count_after": count_after,
+            "count_guard_ok": count_after == count_before,
+            "results": results,
+            "errors": errors,
+        }
 
     def set_gender(self, gramps_id, gender):
-        def mutate(person):
-            person["gender"] = gender
-
-        return self._guarded_write(gramps_id, mutate)
+        return self._guarded_write(gramps_id, _gender_mutation(gender))
 
     def set_surname(self, gramps_id, surname, name_type=None):
-        def mutate(person):
-            person["primary_name"]["surname_list"][0]["surname"] = surname
-            if name_type is not None:
-                person["primary_name"]["type"] = name_type
+        return self._guarded_write(gramps_id, _surname_mutation(surname, name_type))
 
-        return self._guarded_write(gramps_id, mutate)
+    def set_gender_bulk(self, items):
+        return self._bulk_write(items, lambda item: _gender_mutation(item["gender"]))
+
+    def set_surname_bulk(self, items):
+        return self._bulk_write(
+            items, lambda item: _surname_mutation(item["surname"], item.get("name_type"))
+        )
 
     def add_birth_name(self, gramps_id, surname, first_name=None):
         def mutate(person):
@@ -234,27 +343,35 @@ class GrampsClient:
 
         return self._guarded_write(gramps_id, mutate)
 
-    def search_person(self, query):
+    def search_person(self, query, limit=None):
         query_lower = (query or "").strip().lower()
         if not query_lower:
             return []  # empty/whitespace query must not match the whole tree
-        people = self._request("GET", "/api/people/?keys=gramps_id,primary_name,gender")
+        people = self._request(
+            "GET", "/api/people/?keys=gramps_id,primary_name,gender,alternate_names"
+        )
         matches = []
         for person in people:
             primary_name = person.get("primary_name") or {}
-            first_name = primary_name.get("first_name") or ""
-            surname_list = primary_name.get("surname_list") or []
-            surname = surname_list[0]["surname"] if surname_list else ""
-            if query_lower in first_name.lower() or query_lower in surname.lower():
+            haystacks = _name_strings(primary_name)
+            for alt in person.get("alternate_names") or []:
+                haystacks.extend(_name_strings(alt))
+            if any(query_lower in h.lower() for h in haystacks if h):
+                surname_list = primary_name.get("surname_list") or []
                 matches.append(
                     {
                         "gramps_id": person["gramps_id"],
-                        "first_name": first_name,
-                        "surname": surname,
+                        "first_name": primary_name.get("first_name") or "",
+                        "surname": surname_list[0]["surname"] if surname_list else "",
                         "gender": person.get("gender"),
                     }
                 )
-        return matches
+        # "at most `limit`": None -> whole list; a non-positive cap yields none.
+        # (Guard the negative case so a slice like matches[:-1] can't silently drop
+        # the tail of the results.)
+        if limit is not None and limit < 0:
+            limit = 0
+        return matches[:limit]
 
     def _find_tag_handle(self, name):
         # Compare on NFC-normalized forms so a tag created outside this code
@@ -400,7 +517,12 @@ class GrampsClient:
     def _get_family_by_handle(self, handle):
         return self._request("GET", f"/api/families/{handle}")
 
-    def _descendant_node(self, person, children):
+    def _person_summary(self, person):
+        """Flat identity summary of a person: gramps_id/first_name/surname/gender.
+
+        `gender` is always carried explicitly so callers never have to infer sex
+        from a family role slot (father_handle/mother_handle are bloodline, not sex).
+        """
         primary = person.get("primary_name") or {}
         surname_list = primary.get("surname_list") or []
         return {
@@ -408,8 +530,18 @@ class GrampsClient:
             "first_name": primary.get("first_name") or "",
             "surname": surname_list[0]["surname"] if surname_list else "",
             "gender": person.get("gender"),
-            "children": children,
         }
+
+    def _relative_node(self, person, rel_key, relatives):
+        """Build a person summary node with a list of relatives under `rel_key`.
+
+        Shared shape for the descendants (`children`) and ancestors (`parents`)
+        trees: the person summary plus the relatives list.
+        """
+        return {**self._person_summary(person), rel_key: relatives}
+
+    def _descendant_node(self, person, children):
+        return self._relative_node(person, "children", children)
 
     def _build_descendant_node(self, person, remaining_depth):
         children = []
@@ -428,3 +560,81 @@ class GrampsClient:
             raise ValueError("grade must be >= 1")
         root = self.get_person(gramps_id)
         return self._build_descendant_node(root, grade)
+
+    def _ancestor_node(self, person, parents):
+        return self._relative_node(person, "parents", parents)
+
+    def _build_ancestor_node(self, person, remaining_depth):
+        # father_handle/mother_handle are bloodline slots, not gender: each parent
+        # node reports its own `gender`; slots are never relabelled by gender here.
+        parents = []
+        if remaining_depth > 0:
+            for fam_handle in person.get("parent_family_list", []):
+                family = self._get_family_by_handle(fam_handle)
+                for parent_handle in (family.get("father_handle"), family.get("mother_handle")):
+                    if parent_handle:
+                        parent = self._get_person_by_handle(parent_handle)
+                        parents.append(
+                            self._build_ancestor_node(parent, remaining_depth - 1)
+                        )
+        return self._ancestor_node(person, parents)
+
+    def get_ancestors(self, gramps_id, grade=1):
+        if grade < 1:
+            raise ValueError("grade must be >= 1")
+        root = self.get_person(gramps_id)
+        return self._build_ancestor_node(root, grade)
+
+    def _summary_for_handle(self, handle):
+        """Fetch a person by handle and return their flat summary, or None."""
+        if not handle:
+            return None
+        return self._person_summary(self._get_person_by_handle(handle))
+
+    def get_relations(self, gramps_id):
+        """Return a person's family context: parent families and own families.
+
+        Shape: the person summary plus
+          - `parent_families`: families in which the person is a child, each with
+            `father`/`mother` (the family's slots, or None) and `family_gramps_id`.
+          - `families`: families in which the person is a spouse/parent, each with
+            `partner` (the other slot, or None) and `children`.
+        father/mother are bloodline slots, not gender: every person is a summary
+        carrying its own `gender`, so callers must not read sex from a slot.
+        """
+        root = self.get_person(gramps_id)
+        root_handle = root["handle"]
+
+        parent_families = []
+        for fam_handle in root.get("parent_family_list", []):
+            family = self._get_family_by_handle(fam_handle)
+            parent_families.append({
+                "family_gramps_id": family.get("gramps_id"),
+                "father": self._summary_for_handle(family.get("father_handle")),
+                "mother": self._summary_for_handle(family.get("mother_handle")),
+            })
+
+        families = []
+        for fam_handle in root.get("family_list", []):
+            family = self._get_family_by_handle(fam_handle)
+            partner_handle = next(
+                (h for h in (family.get("father_handle"), family.get("mother_handle"))
+                 if h and h != root_handle),
+                None,
+            )
+            partner = self._summary_for_handle(partner_handle)
+            children = [
+                self._summary_for_handle(ref["ref"])
+                for ref in family.get("child_ref_list", [])
+            ]
+            families.append({
+                "family_gramps_id": family.get("gramps_id"),
+                "partner": partner,
+                "children": children,
+            })
+
+        return {
+            **self._person_summary(root),
+            "parent_families": parent_families,
+            "families": families,
+        }
