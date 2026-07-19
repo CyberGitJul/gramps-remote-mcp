@@ -214,6 +214,15 @@ def create_server(client, enable_destructive=None):
         """
         return client.list_blog_posts(page, pagesize)
 
+    @register
+    def gramps_get_blog_post(gramps_id: str) -> dict:
+        """Fetch one blog post by its Source Gramps ID (e.g. 'S0002').
+
+        Returns title, author, change (unix ts), the body as rendered HTML
+        (body_html) and raw string (body_text), and note_gramps_id.
+        """
+        return client.get_blog_post(gramps_id)
+
     if enable_destructive:
         @register
         def gramps_delete_person(gramps_id: str, confirm: bool = False) -> dict:

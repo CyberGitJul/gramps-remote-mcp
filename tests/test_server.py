@@ -386,3 +386,17 @@ def test_gramps_delete_family_hidden_when_disabled():
 
     assert "gramps_delete_family" not in tools
     assert "gramps_get_person" in tools  # non-destructive tools still present
+
+
+# --- gramps_get_blog_post ---
+
+
+def test_gramps_get_blog_post_calls_client():
+    client = MagicMock()
+    client.get_blog_post.return_value = {"gramps_id": "S0002", "title": "T"}
+    _, tools = create_server(client)
+
+    result = tools["gramps_get_blog_post"]("S0002")
+
+    client.get_blog_post.assert_called_once_with("S0002")
+    assert result["gramps_id"] == "S0002"

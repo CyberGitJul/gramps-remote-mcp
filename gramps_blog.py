@@ -90,3 +90,44 @@ class BlogMixin:
         if pagesize is not None:
             params.append(f"pagesize={pagesize}")
         return self._request("GET", "/api/sources/?" + "&".join(params))
+
+    def _get_blog_source(self, gramps_id):
+        """Fetch a Source by gramps_id (full object), or raise BlogPostNotFoundError.
+
+        The live API 404s on an unknown gramps_id; map that (and an empty 200
+        list) to BlogPostNotFoundError, like get_person does.
+        """
+        try:
+            sources = self._request("GET", f"/api/sources/?gramps_id={gramps_id}")
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 404:
+                raise BlogPostNotFoundError(gramps_id) from exc
+            raise
+        if not sources:
+            raise BlogPostNotFoundError(gramps_id)
+        return sources[0]
+
+    def get_blog_post(self, gramps_id):
+        """Fetch a blog post: source fields + the first note rendered as HTML.
+
+        Returns {gramps_id, title, author, change, body_html, body_text,
+        note_gramps_id}. change is the raw unix ts. If the source has no note,
+        the body_* / note_gramps_id fields are None.
+        """
+        source = self._get_blog_source(gramps_id)
+        note_list = source.get("note_list") or []
+        body_html = body_text = note_gramps_id = None
+        if note_list:
+            note = self._request("GET", f"/api/notes/{note_list[0]}?formats=html")
+            body_text = (note.get("text") or {}).get("string")
+            body_html = (note.get("formatted") or {}).get("html")
+            note_gramps_id = note.get("gramps_id")
+        return {
+            "gramps_id": source["gramps_id"],
+            "title": source.get("title"),
+            "author": source.get("author"),
+            "change": source.get("change"),
+            "body_html": body_html,
+            "body_text": body_text,
+            "note_gramps_id": note_gramps_id,
+        }

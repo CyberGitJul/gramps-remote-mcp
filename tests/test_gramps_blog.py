@@ -108,3 +108,43 @@ def test_list_blog_posts_defaults_page_when_only_pagesize():
     url = client._request.call_args.args[1]
     assert "page=1" in url
     assert "pagesize=10" in url
+
+
+from gramps_blog import BlogPostNotFoundError
+
+
+def test_get_blog_post_renders_body_html():
+    client = make_client()
+    client._request = MagicMock(side_effect=[
+        [{"gramps_id": "S0002", "handle": "sH", "title": "T", "author": "A",
+          "change": 99, "note_list": ["nH"]}],                 # source by gramps_id
+        {"gramps_id": "N0001", "handle": "nH",
+         "text": {"string": "<p>hi</p>"},
+         "formatted": {"html": "<div><p>hi</p></div>"}},        # note formats=html
+    ])
+
+    post = client.get_blog_post("S0002")
+
+    assert post == {
+        "gramps_id": "S0002", "title": "T", "author": "A", "change": 99,
+        "body_html": "<div><p>hi</p></div>", "body_text": "<p>hi</p>",
+        "note_gramps_id": "N0001",
+    }
+    assert client._request.call_args_list[1].args[:2] == ("GET", "/api/notes/nH?formats=html")
+
+
+def test_get_blog_post_empty_note_list_ok():
+    client = make_client()
+    client._request = MagicMock(side_effect=[
+        [{"gramps_id": "S0002", "handle": "sH", "title": "T", "author": "A",
+          "change": 99, "note_list": []}],
+    ])
+    post = client.get_blog_post("S0002")
+    assert post["body_html"] is None and post["body_text"] is None and post["note_gramps_id"] is None
+
+
+def test_get_blog_post_not_found_raises():
+    client = make_client()
+    client._request = MagicMock(return_value=[])
+    with pytest.raises(BlogPostNotFoundError):
+        client.get_blog_post("S9999")
