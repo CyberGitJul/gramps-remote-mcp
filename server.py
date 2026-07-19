@@ -5,7 +5,18 @@ from mcp.server.fastmcp import FastMCP
 from gramps_client import GrampsClient
 
 
-def create_server(client):
+def create_server(client, enable_destructive=None):
+    # Destructive tools (e.g. gramps_delete_person) are OFF by default and are not
+    # even registered — clients don't see them — unless explicitly opted in via
+    # GRAMPS_ENABLE_DESTRUCTIVE=1 (or enable_destructive=True). Keeps the default
+    # public deployment non-destructive; owners turn it on deliberately.
+    if enable_destructive is None:
+        enable_destructive = os.environ.get("GRAMPS_ENABLE_DESTRUCTIVE") == "1"
+    else:
+        # An explicit arg is normalized the same strict way as the env var, so a
+        # stray truthy string like "0" cannot fail *open* and expose the tool.
+        enable_destructive = enable_destructive is True or enable_destructive == "1"
+
     mcp = FastMCP("gramps-remote-mcp")
     tools = {}
 
@@ -103,6 +114,29 @@ def create_server(client):
         return client.add_child_to_family(family_id, child_id)
 
     @register
+    def gramps_set_family_parent(family_id: str, gramps_id: str, role: str) -> dict:
+        """Set the father or mother of an EXISTING family to a person.
+
+        role: 'father' or 'mother' — an explicit bloodline slot, NOT gender. A
+        person of any sex may occupy either slot, so this never reorders by sex
+        (unlike gramps_add_family). Use it to add a missing parent to a family or
+        replace the wrong one; add_family only creates new families. Overwrites an
+        already-filled slot and returns the displaced parent as `previous` (a
+        person summary, or None); refuses to set the same person as both parents.
+        """
+        return client.set_family_parent(family_id, gramps_id, role)
+
+    @register
+    def gramps_remove_child_from_family(family_id: str, child_id: str) -> dict:
+        """Remove a person from a family's children (inverse of add_child_to_family).
+
+        Use it to detach a child that was wrongly linked (e.g. a spouse mistakenly
+        recorded as a child) so they can be re-homed elsewhere. Refuses if the
+        person is not actually a child of that family; siblings are left intact.
+        """
+        return client.remove_child_from_family(family_id, child_id)
+
+    @register
     def gramps_confirm_person(gramps_id: str) -> dict:
         """Remove the 'Unbestätigt' tag from a person, marking them as confirmed."""
         return client.confirm_person(gramps_id)
@@ -161,6 +195,32 @@ def create_server(client):
         sex from which slot someone occupies.
         """
         return client.get_relations(gramps_id)
+
+    if enable_destructive:
+        @register
+        def gramps_delete_person(gramps_id: str, confirm: bool = False) -> dict:
+            """Delete a person. DESTRUCTIVE — requires confirm=True.
+
+            For removing duplicates or erroneous entries. Guards the tree size:
+            the people count must drop by exactly one, else it errors (surfacing
+            e.g. an unexpected cascade). Also cleans up notes that were attached
+            only to this person and are now orphaned (shared notes are kept);
+            deleted note handles are returned as `deleted_notes`. This tool is only
+            present when the server was started with GRAMPS_ENABLE_DESTRUCTIVE=1.
+            """
+            return client.delete_person(gramps_id, confirm)
+
+        @register
+        def gramps_delete_family(family_id: str, confirm: bool = False) -> dict:
+            """Delete a family. DESTRUCTIVE — requires confirm=True.
+
+            For cleaning up an orphaned/childless family left behind after
+            re-homing its children (e.g. remove_child_from_family emptied a
+            partnerless family). Refuses if the family still has children, and
+            guards that the family count drops by exactly one. Only present when
+            the server was started with GRAMPS_ENABLE_DESTRUCTIVE=1.
+            """
+            return client.delete_family(family_id, confirm)
 
     return mcp, tools
 
