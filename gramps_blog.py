@@ -69,3 +69,24 @@ class BlogMixin:
                 f"Source count did not rise by one: {count_before} -> {count_after}"
             )
         return new_source["gramps_id"]
+
+    def list_blog_posts(self, page=None, pagesize=None):
+        """List blog posts (Sources tagged 'Blog'), newest first.
+
+        Returns a slim list [{gramps_id, title, author, change}]. `page` is
+        1-based; a bare `pagesize` defaults page to 1 (gramps-web-api ignores
+        pagesize when page < 1 and returns everything).
+        """
+        if page is None and pagesize is not None:
+            page = 1
+        rules = '{"rules":[{"name":"HasTag","values":["Blog"]}]}'
+        params = [
+            "rules=" + quote(rules, safe=""),
+            "sort=-change",
+            "keys=gramps_id,title,author,change",
+        ]
+        if page is not None:
+            params.append(f"page={page}")
+        if pagesize is not None:
+            params.append(f"pagesize={pagesize}")
+        return self._request("GET", "/api/sources/?" + "&".join(params))

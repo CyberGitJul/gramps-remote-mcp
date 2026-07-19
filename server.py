@@ -205,6 +205,15 @@ def create_server(client, enable_destructive=None):
         """
         return client.create_blog_post(title, body, author)
 
+    @register
+    def gramps_list_blog_posts(page: int | None = None, pagesize: int | None = None) -> list:
+        """List blog posts (Sources tagged 'Blog'), newest first.
+
+        Returns [{gramps_id, title, author, change}]. page is 1-based; pagesize
+        caps rows. Omit both to return all posts.
+        """
+        return client.list_blog_posts(page, pagesize)
+
     if enable_destructive:
         @register
         def gramps_delete_person(gramps_id: str, confirm: bool = False) -> dict:

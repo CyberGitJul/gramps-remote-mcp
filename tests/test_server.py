@@ -258,6 +258,27 @@ def test_gramps_create_blog_post_calls_client():
     assert result == "S0002"
 
 
+def test_gramps_list_blog_posts_calls_client():
+    client = MagicMock()
+    client.list_blog_posts.return_value = [{"gramps_id": "S0002"}]
+    _, tools = create_server(client)
+
+    result = tools["gramps_list_blog_posts"](1, 20)
+
+    client.list_blog_posts.assert_called_once_with(1, 20)
+    assert result == [{"gramps_id": "S0002"}]
+
+
+def test_gramps_list_blog_posts_defaults():
+    client = MagicMock()
+    client.list_blog_posts.return_value = []
+    _, tools = create_server(client)
+
+    tools["gramps_list_blog_posts"]()
+
+    client.list_blog_posts.assert_called_once_with(None, None)
+
+
 def test_gramps_set_family_parent_calls_client():
     client = MagicMock()
     client.set_family_parent.return_value = {

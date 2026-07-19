@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+from urllib.parse import quote as _quote
 
 import pytest
 
@@ -82,3 +83,28 @@ def test_create_blog_post_count_guard():
     from gramps_blog import BlogPostCreateCountMismatchError
     with pytest.raises(BlogPostCreateCountMismatchError):
         client.create_blog_post("t", "b")
+
+
+def test_list_blog_posts_query_shape():
+    client = make_client()
+    client._request = MagicMock(return_value=[{"gramps_id": "S0002", "title": "t", "author": "a", "change": 5}])
+
+    result = client.list_blog_posts()
+
+    method, url = client._request.call_args.args[0], client._request.call_args.args[1]
+    assert method == "GET"
+    assert url.startswith("/api/sources/?")
+    rules = '{"rules":[{"name":"HasTag","values":["Blog"]}]}'
+    assert "rules=" + _quote(rules, safe="") in url
+    assert "sort=-change" in url
+    assert "keys=gramps_id,title,author,change" in url
+    assert result == [{"gramps_id": "S0002", "title": "t", "author": "a", "change": 5}]
+
+
+def test_list_blog_posts_defaults_page_when_only_pagesize():
+    client = make_client()
+    client._request = MagicMock(return_value=[])
+    client.list_blog_posts(pagesize=10)
+    url = client._request.call_args.args[1]
+    assert "page=1" in url
+    assert "pagesize=10" in url
