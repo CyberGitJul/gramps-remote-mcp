@@ -32,6 +32,22 @@ class ChildAlreadyInFamilyError(Exception):
     pass
 
 
+class ChildNotInFamilyError(Exception):
+    pass
+
+
+class PersonDeleteCountMismatchError(Exception):
+    pass
+
+
+class FamilyNotEmptyError(Exception):
+    pass
+
+
+class FamilyDeleteCountMismatchError(Exception):
+    pass
+
+
 _DATE_MODIFIERS = {
     "exact": 0,
     "about": 3,
@@ -510,6 +526,143 @@ class GrampsClient:
         family.setdefault("child_ref_list", []).append(child_ref)
         self._put_family(family["handle"], family)
         return {"family_id": family_id, "child_id": child_id}
+
+    def set_family_parent(self, family_id, gramps_id, role):
+        """Set the father or mother slot of an EXISTING family to a person.
+
+        `role` is an explicit bloodline slot ("father" or "mother"), NOT derived
+        from gender: a person of any sex may occupy either slot, so — unlike
+        add_family — this never reorders by sex. Overwrites the slot if already
+        filled and reports the displaced parent as `previous` (a person summary,
+        or None if the slot was empty). Refuses to put the same person into both
+        parent slots. Non-destructive (PUTs the family); the API maintains the
+        person's reverse family_list reference.
+        """
+        slots = {"father": "father_handle", "mother": "mother_handle"}
+        slot = slots.get(role)
+        if slot is None:
+            raise ValueError(f"role must be 'father' or 'mother', got {role!r}")
+        other_slot = "mother_handle" if slot == "father_handle" else "father_handle"
+        family = self.get_family(family_id)
+        person = self.get_person(gramps_id)
+        if person["handle"] == family.get(other_slot):
+            raise ValueError(
+                f"person {gramps_id} already occupies the other parent slot; a "
+                "family cannot have the same person as both father and mother"
+            )
+        previous = self._summary_for_handle(family.get(slot))
+        family[slot] = person["handle"]
+        self._put_family(family["handle"], family)
+        return {
+            "family_id": family_id,
+            "gramps_id": gramps_id,
+            "role": role,
+            "previous": previous,
+        }
+
+    def remove_child_from_family(self, family_id, child_id):
+        """Remove a child from an existing family (inverse of add_child_to_family).
+
+        Refuses with ChildNotInFamilyError if the person is not a child of the
+        family. Non-destructive (PUTs the family); the API maintains the child's
+        reverse parent_family_list reference.
+        """
+        family = self.get_family(family_id)
+        child = self.get_person(child_id)
+        child_ref_list = family.get("child_ref_list", [])
+        remaining = [ref for ref in child_ref_list if ref["ref"] != child["handle"]]
+        if len(remaining) == len(child_ref_list):
+            raise ChildNotInFamilyError(family_id, child_id)
+        family["child_ref_list"] = remaining
+        self._put_family(family["handle"], family)
+        return {"family_id": family_id, "child_id": child_id}
+
+    def delete_person(self, gramps_id, confirm=False):
+        """Delete a person. DESTRUCTIVE — requires confirm=True.
+
+        Intended for removing duplicates / erroneous entries. Guards the tree
+        size: expects the people count to drop by exactly one and raises
+        PersonDeleteCountMismatchError otherwise (e.g. an unexpected cascade).
+        `confirm` must be the literal True, so a stray truthy value cannot delete.
+
+        The Gramps API does not cascade-delete the person's own notes, so any note
+        attached ONLY to this person would otherwise be left orphaned (inflating
+        the notes count). After deleting, this cleans those up: each formerly
+        attached note is removed iff it is now unreferenced; notes still shared
+        with other objects are left intact. Deleted note handles are reported as
+        `deleted_notes` (best-effort — a cleanup failure never fails the delete).
+        """
+        if confirm is not True:
+            raise ValueError("delete_person requires confirm=True (destructive)")
+        person = self.get_person(gramps_id)
+        note_handles = person.get("note_list") or []
+        count_before = self.count_people()
+        self._request("DELETE", f"/api/people/{person['handle']}")
+        count_after = self.count_people()
+        if count_after != count_before - 1:
+            raise PersonDeleteCountMismatchError(
+                f"Person count did not drop by one: {count_before} -> {count_after}"
+            )
+        deleted_notes = self._delete_orphaned_notes(note_handles)
+        return {
+            "gramps_id": gramps_id,
+            "deleted": True,
+            "count_before": count_before,
+            "count_after": count_after,
+            "deleted_notes": deleted_notes,
+        }
+
+    def _delete_orphaned_notes(self, note_handles):
+        """Delete each note (by handle) that no object references any more.
+
+        Called after removing an owner (e.g. a person): a note that was attached
+        only to that owner is now orphaned and would otherwise clutter the tree and
+        inflate the notes count. A note is orphaned iff its `backlinks` are empty;
+        notes still referenced elsewhere (shared) are left untouched. Best-effort
+        and idempotent — a per-note failure is skipped, never raised, because the
+        owner is already gone by the time this runs. Returns the deleted handles.
+        """
+        deleted = []
+        for handle in note_handles:
+            try:
+                note = self._request("GET", f"/api/notes/{handle}?backlinks=1")
+                if not note.get("backlinks"):
+                    self._request("DELETE", f"/api/notes/{handle}")
+                    deleted.append(handle)
+            except requests.HTTPError:
+                continue
+        return deleted
+
+    def delete_family(self, family_id, confirm=False):
+        """Delete a family. DESTRUCTIVE — requires confirm=True.
+
+        Intended for cleaning up an orphaned/childless family left behind after
+        re-homing its children (e.g. remove_child_from_family emptied a partnerless
+        family). Refuses with FamilyNotEmptyError if the family still has children,
+        so no child is silently orphaned — remove them first. Guards the tree size:
+        expects the family count to drop by exactly one and raises
+        FamilyDeleteCountMismatchError otherwise. `confirm` must be the literal
+        True, so a stray truthy value cannot delete. The API maintains the parents'
+        reverse family_list references.
+        """
+        if confirm is not True:
+            raise ValueError("delete_family requires confirm=True (destructive)")
+        family = self.get_family(family_id)
+        if family.get("child_ref_list"):
+            raise FamilyNotEmptyError(family_id)
+        count_before = self.count_families()
+        self._request("DELETE", f"/api/families/{family['handle']}")
+        count_after = self.count_families()
+        if count_after != count_before - 1:
+            raise FamilyDeleteCountMismatchError(
+                f"Family count did not drop by one: {count_before} -> {count_after}"
+            )
+        return {
+            "family_id": family_id,
+            "deleted": True,
+            "count_before": count_before,
+            "count_after": count_after,
+        }
 
     def _get_person_by_handle(self, handle):
         return self._request("GET", f"/api/people/{handle}")

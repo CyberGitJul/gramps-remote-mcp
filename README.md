@@ -8,11 +8,14 @@ a running [Gramps Web](https://www.grampsweb.org) instance through its REST API.
 Unlike MCP servers that read a local Gramps database file, this one talks to Gramps Web
 over HTTP, so it works against a live, shared instance — and it focuses on **guided,
 guarded write operations**: new records are tagged as unconfirmed for later review, and
-every mutation is protected by before/after snapshots and record-count guards.
+field mutations and record creates are protected by before/after snapshots and
+record-count guards.
 
 ## Tools
 
-The server exposes 16 tools over the MCP **stdio** transport.
+The server exposes 18 tools over the MCP **stdio** transport, plus optional
+destructive tools (`gramps_delete_person`, `gramps_delete_family`) that are registered
+only when explicitly enabled — see [Destructive tools](#destructive-tools).
 
 **Read**
 
@@ -35,10 +38,25 @@ The server exposes 16 tools over the MCP **stdio** transport.
 | `gramps_set_gender_bulk(items)` | Set gender for many people in one call (`items` = `[{"gramps_id", "gender"}, …]`) under a single count-guard; best-effort, per-item results and errors. |
 | `gramps_set_surname_bulk(items)` | Set the primary surname for many people in one call (`items` = `[{"gramps_id", "surname", "name_type"?}, …]`) under a single count-guard; best-effort. |
 | `gramps_add_birth_name(gramps_id, surname, first_name=None)` | Add a `Birth Name` alternate-name entry. |
-| `gramps_add_person(first_name, surname, gender, birth_year=None, birth_quality=None, birth_year_to=None, note=None)` | Create a new person, tagged **Unbestätigt** (unconfirmed). Returns the new Gramps ID. |
+| `gramps_add_person(first_name, surname, gender, birth_year=None, birth_quality=None, birth_year_to=None, note=None)` | Create a new person, tagged as **unconfirmed** for later review. Returns the new Gramps ID. |
 | `gramps_add_family(spouse_a_id, spouse_b_id=None)` | Create a family linking one or two spouses. Returns the new family's Gramps ID. |
 | `gramps_add_child_to_family(family_id, child_id)` | Link an existing person as a child of an existing family. |
-| `gramps_confirm_person(gramps_id)` | Remove the **Unbestätigt** tag, marking a person as confirmed. |
+| `gramps_set_family_parent(family_id, gramps_id, role)` | Set the father or mother of an **existing** family (`role` = `father`/`mother`, an explicit bloodline slot — never reordered by sex, unlike `gramps_add_family`). Adds a missing parent or replaces the wrong one (refusing to set one person as both parents); returns the displaced parent as `previous`. |
+| `gramps_remove_child_from_family(family_id, child_id)` | Remove a person from a family's children (inverse of `gramps_add_child_to_family`) — e.g. detach a spouse wrongly recorded as a child. Siblings are left intact. |
+| `gramps_confirm_person(gramps_id)` | Remove the **unconfirmed** tag, marking a person as confirmed. |
+
+### Destructive tools
+
+These destructive tools exist but are **off by default and not even registered**, so MCP
+clients never see them unless you opt in:
+
+| Tool | Purpose |
+| --- | --- |
+| `gramps_delete_person(gramps_id, confirm)` | Permanently delete a person (for duplicates / erroneous entries). Requires `confirm=True` and guards that the people count drops by exactly one. Deleting a linked person unlinks them from their families (the slot is cleared) rather than cascading. Notes attached only to this person are cleaned up too (shared notes are kept); deleted note handles are returned as `deleted_notes`. |
+| `gramps_delete_family(family_id, confirm)` | Permanently delete a family — for cleaning up an orphaned/childless family left behind after re-homing its children. Requires `confirm=True`, refuses if the family still has children (remove them first), and guards that the family count drops by exactly one. |
+
+To enable it, set `GRAMPS_ENABLE_DESTRUCTIVE=1` in the server's environment; the account
+also needs delete rights on the tree. Leave it unset for a read/edit-only deployment.
 
 ## Prerequisites
 
@@ -126,26 +144,31 @@ Or run the Python script directly:
 
 ## Design focus
 
-- **Unconfirmed lifecycle.** `gramps_add_person` tags every new record with an
-  `Unbestätigt` ("unconfirmed") tag; `gramps_confirm_person` removes it. This gives you a
+- **Unconfirmed lifecycle.** `gramps_add_person` tags every new record as unconfirmed
+  (a dedicated review tag); `gramps_confirm_person` removes it. This gives you a
   review queue for records created by an assistant before they are accepted as final.
 - **Guarded writes.** Field mutations capture a `before`/`after` snapshot and verify that
   the total person (or family) count is unchanged — or increased by exactly one on a
   create — raising an error otherwise, so an unexpected side effect fails loudly instead
-  of silently corrupting the tree.
+  of silently corrupting the tree. Structural family edits (`add_child_to_family`,
+  `remove_child_from_family`, `set_family_parent`) instead PUT the whole family and rely on
+  the Gramps Web API's referential integrity rather than a local count guard; the
+  destructive `delete_person` keeps its own exact −1 person-count guard.
 - **Idempotency guards.** `gramps_add_child_to_family` refuses to add a child that is
   already linked; the unconfirmed tag is looked up and reused (with Unicode NFC
   normalization) rather than duplicated.
-- **Gender-based parent slots.** When creating a family, the spouse with gender Female is
-  assigned as mother and the other as father; if gender doesn't disambiguate, call order
-  decides deterministically.
+- **Gender-based parent slots.** When creating a family with `gramps_add_family`, the
+  spouse with gender Female is assigned as mother and the other as father; if gender
+  doesn't disambiguate, call order decides deterministically. To place a parent into a
+  specific slot regardless of sex, use `gramps_set_family_parent` with an explicit `role`.
 - **Structured relative trees.** `gramps_get_descendants` and `gramps_get_ancestors`
   return nested JSON trees bounded to `grade` generations, and `gramps_get_relations`
   gives a person's full family context in one call — rather than flat lists.
 - **Bloodline ≠ gender.** In GEDCOM-imported data a family's `father`/`mother` slots
   follow the bloodline, not sex. The relation/ancestor tools therefore never infer sex
   from a slot: every person carries its own `gender`, and partners are resolved as "the
-  other slot" regardless of gender.
+  other slot" regardless of gender. `gramps_set_family_parent` follows the same rule — you
+  pass an explicit `role` (`father`/`mother`), and it never reorders by sex.
 - **Batch writes with one guard.** `gramps_set_gender_bulk` / `gramps_set_surname_bulk`
   apply many updates under a single record-count guard. They are best-effort (not atomic):
   a failing item is reported in `errors` and does not abort the rest, and the count guard
@@ -163,6 +186,12 @@ python3 -m venv .venv
 
 The tests mock the Gramps Web HTTP layer, so no live instance is required. Test fixtures
 use generic placeholder names.
+
+## Notes on the Gramps Web API
+
+* [`docs/blog-crud.md`](docs/blog-crud.md) — how blog posts are modelled in Gramps Web
+  (a `Source` tagged `Blog`, not a note) and how to CRUD them over the REST API, including
+  verified pitfalls around `PUT` semantics, `If-Match` and styled text.
 
 ## Related projects
 

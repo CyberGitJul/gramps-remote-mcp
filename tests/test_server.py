@@ -1,4 +1,5 @@
-from unittest.mock import MagicMock
+import os
+from unittest.mock import MagicMock, patch
 
 from server import create_server
 
@@ -244,3 +245,112 @@ def test_gramps_get_relations_calls_client():
     assert result["gramps_id"] == "I0036"
     assert result["parent_families"] == []
     assert result["families"] == []
+
+
+def test_gramps_set_family_parent_calls_client():
+    client = MagicMock()
+    client.set_family_parent.return_value = {
+        "family_id": "F0005", "gramps_id": "I0091", "role": "mother",
+        "previous_handle": None,
+    }
+    _, tools = create_server(client)
+
+    result = tools["gramps_set_family_parent"]("F0005", "I0091", "mother")
+
+    client.set_family_parent.assert_called_once_with("F0005", "I0091", "mother")
+    assert result["role"] == "mother"
+
+
+def test_gramps_remove_child_from_family_calls_client():
+    client = MagicMock()
+    client.remove_child_from_family.return_value = {"family_id": "F0003", "child_id": "I0091"}
+    _, tools = create_server(client)
+
+    result = tools["gramps_remove_child_from_family"]("F0003", "I0091")
+
+    client.remove_child_from_family.assert_called_once_with("F0003", "I0091")
+    assert result == {"family_id": "F0003", "child_id": "I0091"}
+
+
+# --- gramps_delete_person (G9, destructive, env-gated) ---
+
+
+def test_gramps_delete_person_registered_and_delegates_when_enabled():
+    client = MagicMock()
+    client.delete_person.return_value = {
+        "gramps_id": "I0091", "deleted": True, "count_before": 2, "count_after": 1,
+    }
+    _, tools = create_server(client, enable_destructive=True)
+
+    assert "gramps_delete_person" in tools
+    result = tools["gramps_delete_person"]("I0091", True)
+
+    client.delete_person.assert_called_once_with("I0091", True)
+    assert result["deleted"] is True
+
+
+def test_gramps_delete_person_hidden_when_disabled():
+    client = MagicMock()
+    _, tools = create_server(client, enable_destructive=False)
+
+    assert "gramps_delete_person" not in tools
+    # the non-destructive tools are still there
+    assert "gramps_get_person" in tools
+
+
+def test_gramps_delete_person_gate_defaults_to_env_enabled():
+    client = MagicMock()
+    with patch.dict(os.environ, {"GRAMPS_ENABLE_DESTRUCTIVE": "1"}):
+        _, tools = create_server(client)  # gate arg omitted -> read env
+
+    assert "gramps_delete_person" in tools
+
+
+def test_gramps_delete_person_gate_defaults_to_env_absent():
+    client = MagicMock()
+    with patch.dict(os.environ, {}, clear=True):  # env var unset
+        _, tools = create_server(client)
+
+    assert "gramps_delete_person" not in tools
+
+
+def test_gramps_delete_person_explicit_arg_normalized_and_beats_env():
+    client = MagicMock()
+
+    # an explicit arg is normalized as strictly as the env var: a stray truthy
+    # string like "0" must NOT fail open and register the destructive tool.
+    _, tools = create_server(client, enable_destructive="0")
+    assert "gramps_delete_person" not in tools  # "0" is truthy but means "off"
+
+    _, tools = create_server(client, enable_destructive="1")
+    assert "gramps_delete_person" in tools
+
+    # an explicit False wins over a conflicting env var that says enabled.
+    with patch.dict(os.environ, {"GRAMPS_ENABLE_DESTRUCTIVE": "1"}):
+        _, tools = create_server(client, enable_destructive=False)
+    assert "gramps_delete_person" not in tools
+
+
+# --- gramps_delete_family (G10, destructive, env-gated) ---
+
+
+def test_gramps_delete_family_registered_and_delegates_when_enabled():
+    client = MagicMock()
+    client.delete_family.return_value = {
+        "family_id": "F0031", "deleted": True, "count_before": 2, "count_after": 1,
+    }
+    _, tools = create_server(client, enable_destructive=True)
+
+    assert "gramps_delete_family" in tools
+    result = tools["gramps_delete_family"]("F0031", True)
+
+    client.delete_family.assert_called_once_with("F0031", True)
+    assert result["deleted"] is True
+
+
+def test_gramps_delete_family_hidden_when_disabled():
+    client = MagicMock()
+    _, tools = create_server(client, enable_destructive=False)
+
+    assert "gramps_delete_family" not in tools
+    assert "gramps_get_person" in tools  # non-destructive tools still present

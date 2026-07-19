@@ -2078,3 +2078,512 @@ def test_search_person_negative_limit_returns_no_results(mock_post, mock_request
 
     assert client.search_person("prentl", limit=-1) == []
     assert client.search_person("prentl", limit=0) == []
+
+
+# --- set_family_parent (G8) ---
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_set_family_parent_sets_mother_handle(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {
+        "gramps_id": "F0005",
+        "handle": "famhandle5",
+        "father_handle": "h_father",
+        "mother_handle": None,
+    }
+    person = {"gramps_id": "I0091", "handle": "h_tanja", "gender": 0}
+    mock_request.side_effect = [
+        make_response([family]),   # get_family
+        make_response([person]),   # get_person
+        make_response(None),       # put family
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.set_family_parent("F0005", "I0091", "mother")
+
+    put_call = mock_request.call_args_list[2]
+    assert put_call.args[0] == "PUT"
+    assert put_call.args[1] == "https://example.test/api/families/famhandle5"
+    put_body = put_call.kwargs["json"]
+    assert put_body["mother_handle"] == "h_tanja"
+    assert put_body["father_handle"] == "h_father"  # untouched slot preserved
+    assert result == {
+        "family_id": "F0005",
+        "gramps_id": "I0091",
+        "role": "mother",
+        "previous": None,
+    }
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_set_family_parent_sets_father_handle(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {
+        "gramps_id": "F0005",
+        "handle": "famhandle5",
+        "father_handle": None,
+        "mother_handle": "h_mother",
+    }
+    person = {"gramps_id": "I0085", "handle": "h_philip", "gender": 1}
+    mock_request.side_effect = [
+        make_response([family]),
+        make_response([person]),
+        make_response(None),
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.set_family_parent("F0005", "I0085", "father")
+
+    put_body = mock_request.call_args_list[2].kwargs["json"]
+    assert put_body["father_handle"] == "h_philip"
+    assert put_body["mother_handle"] == "h_mother"  # untouched slot preserved
+    assert result["role"] == "father"
+    assert result["previous"] is None
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_set_family_parent_role_is_explicit_not_gender(mock_post, mock_request):
+    # headline G8 contract: father/mother are BLOODLINE slots, not gender. A FEMALE
+    # person (gender 0) explicitly placed in the "father" slot must land there
+    # verbatim; the tool must NOT reorder by sex the way add_family does.
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {"gramps_id": "F0009", "handle": "fh9", "father_handle": None,
+              "mother_handle": None}
+    female = {"gramps_id": "I0036", "handle": "h_ala", "gender": 0}
+    mock_request.side_effect = [
+        make_response([family]),
+        make_response([female]),
+        make_response(None),
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    client.set_family_parent("F0009", "I0036", "father")
+
+    put_body = mock_request.call_args_list[2].kwargs["json"]
+    assert put_body["father_handle"] == "h_ala"   # female in the father slot, as asked
+    assert put_body["mother_handle"] is None
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_set_family_parent_replaces_existing_returns_previous(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {"gramps_id": "F0005", "handle": "famhandle5",
+              "father_handle": "h_father", "mother_handle": "h_old_mother"}
+    person = {"gramps_id": "I0091", "handle": "h_tanja", "gender": 0}
+    old_mother = {
+        "gramps_id": "I0050", "handle": "h_old_mother", "gender": 0,
+        "primary_name": {"first_name": "Maria", "surname_list": [{"surname": "Meyer"}]},
+    }
+    mock_request.side_effect = [
+        make_response([family]),    # get_family
+        make_response([person]),    # get_person (the new mother)
+        make_response(old_mother),  # _summary_for_handle -> GET the displaced parent
+        make_response(None),        # put family
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.set_family_parent("F0005", "I0091", "mother")
+
+    put_body = mock_request.call_args_list[3].kwargs["json"]
+    assert put_body["mother_handle"] == "h_tanja"
+    # the displaced parent is resolved to a consumable gramps_id summary, not a raw handle
+    assert result["previous"] == {
+        "gramps_id": "I0050", "first_name": "Maria", "surname": "Meyer", "gender": 0,
+    }
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_set_family_parent_rejects_same_person_as_both_parents(mock_post, mock_request):
+    # a family cannot have one person as father AND mother: the person already in the
+    # father slot must not be settable into the mother slot -> ValueError, and no PUT.
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {"gramps_id": "F0005", "handle": "famhandle5",
+              "father_handle": "h_tanja", "mother_handle": None}
+    person = {"gramps_id": "I0091", "handle": "h_tanja", "gender": 0}
+    mock_request.side_effect = [
+        make_response([family]),   # get_family
+        make_response([person]),   # get_person
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(ValueError):
+        client.set_family_parent("F0005", "I0091", "mother")
+    assert mock_request.call_count == 2  # rejected before the PUT
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_set_family_parent_invalid_role_raises_before_any_request(mock_post, mock_request):
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(ValueError):
+        client.set_family_parent("F0005", "I0091", "parent")
+    mock_request.assert_not_called()  # validated before touching the network
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_set_family_parent_family_not_found_raises(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    mock_request.return_value = make_response([])  # get_family -> empty
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(FamilyNotFoundError):
+        client.set_family_parent("F9999", "I0091", "mother")
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_set_family_parent_person_not_found_raises(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {"gramps_id": "F0005", "handle": "famhandle5",
+              "father_handle": None, "mother_handle": None}
+    mock_request.side_effect = [
+        make_response([family]),   # get_family ok
+        make_response([]),         # get_person -> empty
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(PersonNotFoundError):
+        client.set_family_parent("F0005", "I9999", "mother")
+
+
+# --- remove_child_from_family (G7) ---
+
+from gramps_client import ChildNotInFamilyError
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_remove_child_from_family_removes_ref(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {
+        "gramps_id": "F0003",
+        "handle": "famhandle3",
+        "child_ref_list": [{"_class": "ChildRef", "ref": "childhandle1"}],
+    }
+    child = {"gramps_id": "I0091", "handle": "childhandle1"}
+    mock_request.side_effect = [
+        make_response([family]),   # get_family
+        make_response([child]),    # get_person
+        make_response(None),       # put family
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.remove_child_from_family("F0003", "I0091")
+
+    put_call = mock_request.call_args_list[2]
+    assert put_call.args[0] == "PUT"
+    assert put_call.args[1] == "https://example.test/api/families/famhandle3"
+    assert put_call.kwargs["json"]["child_ref_list"] == []  # ref gone
+    assert result == {"family_id": "F0003", "child_id": "I0091"}
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_remove_child_from_family_leaves_siblings(mock_post, mock_request):
+    # removing one child must NOT drop the others from child_ref_list
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {
+        "gramps_id": "F0003",
+        "handle": "famhandle3",
+        "child_ref_list": [
+            {"_class": "ChildRef", "ref": "h_keep1"},
+            {"_class": "ChildRef", "ref": "childhandle1"},  # the one to remove
+            {"_class": "ChildRef", "ref": "h_keep2"},
+        ],
+    }
+    child = {"gramps_id": "I0091", "handle": "childhandle1"}
+    mock_request.side_effect = [
+        make_response([family]),
+        make_response([child]),
+        make_response(None),
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    client.remove_child_from_family("F0003", "I0091")
+
+    remaining = [r["ref"] for r in mock_request.call_args_list[2].kwargs["json"]["child_ref_list"]]
+    assert remaining == ["h_keep1", "h_keep2"]  # siblings preserved, order kept
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_remove_child_from_family_not_a_child_raises(mock_post, mock_request):
+    # the person is not a child of this family -> refuse, and do NOT PUT anything
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {
+        "gramps_id": "F0003",
+        "handle": "famhandle3",
+        "child_ref_list": [{"_class": "ChildRef", "ref": "h_other"}],
+    }
+    child = {"gramps_id": "I0091", "handle": "childhandle1"}
+    mock_request.side_effect = [
+        make_response([family]),   # get_family
+        make_response([child]),    # get_person
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(ChildNotInFamilyError):
+        client.remove_child_from_family("F0003", "I0091")
+    assert mock_request.call_count == 2  # no PUT issued
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_remove_child_from_family_family_not_found_raises(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    mock_request.return_value = make_response([])  # get_family -> empty
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(FamilyNotFoundError):
+        client.remove_child_from_family("F9999", "I0091")
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_remove_child_from_family_person_not_found_raises(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {"gramps_id": "F0003", "handle": "famhandle3", "child_ref_list": []}
+    mock_request.side_effect = [
+        make_response([family]),   # get_family ok
+        make_response([]),         # get_person -> empty
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(PersonNotFoundError):
+        client.remove_child_from_family("F0003", "I9999")
+
+
+# --- delete_person (G9, DESTRUCTIVE) ---
+
+from gramps_client import PersonDeleteCountMismatchError
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_person_requires_confirm(mock_post, mock_request):
+    # destructive: without confirm=True it must refuse BEFORE any network call
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(ValueError):
+        client.delete_person("I0091")           # confirm defaults to False
+    with pytest.raises(ValueError):
+        client.delete_person("I0091", confirm=False)
+    mock_request.assert_not_called()
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_person_deletes_and_guards_count(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {"gramps_id": "I0091", "handle": "h_tanja"}
+    mock_request.side_effect = [
+        make_response([person]),   # get_person
+        make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0091"}]),  # count before: 2
+        make_response([{"type": "delete", "handle": "h_tanja", "_class": "Person"}]),  # DELETE
+        make_response([{"gramps_id": "I0001"}]),  # count after: 1
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.delete_person("I0091", confirm=True)
+
+    delete_call = mock_request.call_args_list[2]
+    assert delete_call.args[0] == "DELETE"
+    assert delete_call.args[1] == "https://example.test/api/people/h_tanja"
+    assert result == {
+        "gramps_id": "I0091",
+        "deleted": True,
+        "count_before": 2,
+        "count_after": 1,
+        "deleted_notes": [],  # this person had no attached notes
+    }
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_person_count_mismatch_raises(mock_post, mock_request):
+    # count must drop by exactly one; anything else (e.g. cascade) is surfaced
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {"gramps_id": "I0091", "handle": "h_tanja"}
+    mock_request.side_effect = [
+        make_response([person]),   # get_person
+        make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0091"}]),  # before: 2
+        make_response([{"type": "delete", "handle": "h_tanja", "_class": "Person"}]),
+        make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0091"}]),  # after: still 2!
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(PersonDeleteCountMismatchError):
+        client.delete_person("I0091", confirm=True)
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_person_not_found_raises(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    mock_request.return_value = make_response([])  # get_person -> empty
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(PersonNotFoundError):
+        client.delete_person("I9999", confirm=True)
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_person_confirm_must_be_literal_true(mock_post, mock_request):
+    # the docstring promises "a stray truthy value cannot delete": only the literal
+    # True proceeds. Every other truthy value must raise BEFORE any network call, so a
+    # refactor of `confirm is not True` to `if not confirm:` cannot silently start
+    # deleting on confirm=1 / "yes" while the suite stays green.
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    for truthy in (1, "yes", "true", [1], {"ok": 1}):
+        with pytest.raises(ValueError):
+            client.delete_person("I0091", confirm=truthy)
+    mock_request.assert_not_called()
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_person_cleans_up_orphaned_note(mock_post, mock_request):
+    # a note attached ONLY to the deleted person becomes orphaned (empty backlinks)
+    # and must be deleted too, so the notes count doesn't drift.
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {"gramps_id": "I0649", "handle": "h_p", "note_list": ["h_note1"]}
+    mock_request.side_effect = [
+        make_response([person]),   # get_person
+        make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0649"}]),  # count before: 2
+        make_response([{"type": "delete", "handle": "h_p", "_class": "Person"}]),  # DELETE person
+        make_response([{"gramps_id": "I0001"}]),  # count after: 1
+        make_response({"handle": "h_note1", "backlinks": {}}),  # GET note backlinks -> orphaned
+        make_response([{"type": "delete", "handle": "h_note1", "_class": "Note"}]),  # DELETE note
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.delete_person("I0649", confirm=True)
+
+    note_get = mock_request.call_args_list[4]
+    assert note_get.args == ("GET", "https://example.test/api/notes/h_note1?backlinks=1")
+    note_del = mock_request.call_args_list[5]
+    assert note_del.args[0] == "DELETE"
+    assert note_del.args[1] == "https://example.test/api/notes/h_note1"
+    assert result["deleted_notes"] == ["h_note1"]
+    assert result["deleted"] is True
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_person_keeps_shared_note(mock_post, mock_request):
+    # a note still referenced elsewhere (non-empty backlinks) is SHARED and must be
+    # left intact — deleting it would corrupt the other object.
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {"gramps_id": "I0649", "handle": "h_p", "note_list": ["h_shared"]}
+    mock_request.side_effect = [
+        make_response([person]),   # get_person
+        make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0649"}]),  # before: 2
+        make_response([{"type": "delete", "handle": "h_p", "_class": "Person"}]),  # DELETE person
+        make_response([{"gramps_id": "I0001"}]),  # after: 1
+        make_response({"handle": "h_shared", "backlinks": {"family": ["h_fam"]}}),  # still referenced
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.delete_person("I0649", confirm=True)
+
+    assert result["deleted_notes"] == []          # nothing deleted
+    assert mock_request.call_count == 5            # no DELETE issued for the shared note
+
+
+# --- delete_family (G10, DESTRUCTIVE) ---
+
+from gramps_client import FamilyNotEmptyError, FamilyDeleteCountMismatchError
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_family_requires_confirm(mock_post, mock_request):
+    # destructive: without confirm=True it must refuse BEFORE any network call
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(ValueError):
+        client.delete_family("F0031")            # confirm defaults to False
+    with pytest.raises(ValueError):
+        client.delete_family("F0031", confirm=False)
+    mock_request.assert_not_called()
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_family_deletes_childless_and_guards_count(mock_post, mock_request):
+    # a partnered but childless (orphaned) family is deletable; parents are fine
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {"gramps_id": "F0031", "handle": "fh31",
+              "father_handle": "h_dad", "mother_handle": None, "child_ref_list": []}
+    mock_request.side_effect = [
+        make_response([family]),   # get_family
+        make_response([{"gramps_id": "F0001"}, {"gramps_id": "F0031"}]),  # count before: 2
+        make_response([{"type": "delete", "handle": "fh31", "_class": "Family"}]),  # DELETE
+        make_response([{"gramps_id": "F0001"}]),  # count after: 1
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.delete_family("F0031", confirm=True)
+
+    delete_call = mock_request.call_args_list[2]
+    assert delete_call.args[0] == "DELETE"
+    assert delete_call.args[1] == "https://example.test/api/families/fh31"
+    assert result == {
+        "family_id": "F0031", "deleted": True, "count_before": 2, "count_after": 1,
+    }
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_family_refuses_when_children_remain(mock_post, mock_request):
+    # never silently orphan children: a family that still has kids must not be deleted
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {"gramps_id": "F0031", "handle": "fh31",
+              "child_ref_list": [{"_class": "ChildRef", "ref": "h_kid"}]}
+    mock_request.side_effect = [
+        make_response([family]),   # get_family
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(FamilyNotEmptyError):
+        client.delete_family("F0031", confirm=True)
+    assert mock_request.call_count == 1  # rejected before any DELETE
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_family_count_mismatch_raises(mock_post, mock_request):
+    # count must drop by exactly one; anything else is surfaced
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    family = {"gramps_id": "F0031", "handle": "fh31", "child_ref_list": []}
+    mock_request.side_effect = [
+        make_response([family]),
+        make_response([{"gramps_id": "F0001"}, {"gramps_id": "F0031"}]),  # before: 2
+        make_response([{"type": "delete", "handle": "fh31", "_class": "Family"}]),
+        make_response([{"gramps_id": "F0001"}, {"gramps_id": "F0031"}]),  # after: still 2!
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(FamilyDeleteCountMismatchError):
+        client.delete_family("F0031", confirm=True)
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_family_not_found_raises(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    mock_request.return_value = make_response([])  # get_family -> empty
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(FamilyNotFoundError):
+        client.delete_family("F9999", confirm=True)
