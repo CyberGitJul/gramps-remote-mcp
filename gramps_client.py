@@ -140,11 +140,14 @@ def _surname_mutation(surname, name_type=None):
 
 
 class GrampsClient:
-    def __init__(self, base_url, username, password):
+    def __init__(self, base_url, username, password, blog_body_format=None):
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
         self._access_token = None
+        # Fail-safe (like GRAMPS_ENABLE_DESTRUCTIVE): only the exact string "html"
+        # enables HTML bodies; anything else falls back to safe plain text.
+        self.blog_body_format = "html" if blog_body_format == "html" else "text"
 
     def _login(self):
         resp = requests.post(

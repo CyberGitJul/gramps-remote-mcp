@@ -230,6 +230,7 @@ def main():
         base_url=os.environ["GRAMPS_BASE_URL"],
         username=os.environ["GRAMPS_USERNAME"],
         password=os.environ["GRAMPS_PASSWORD"],
+        blog_body_format=os.environ.get("GRAMPS_BLOG_BODY_FORMAT"),
     )
     mcp, _ = create_server(client)
     mcp.run(transport="stdio")

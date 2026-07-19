@@ -2587,3 +2587,17 @@ def test_delete_family_not_found_raises(mock_post, mock_request):
 
     with pytest.raises(FamilyNotFoundError):
         client.delete_family("F9999", confirm=True)
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [("html", "html"), ("text", "text"), ("0", "text"), (None, "text"), ("HTML", "text"), ("garbage", "text")],
+)
+def test_blog_body_format_normalized_failsafe(raw, expected):
+    client = GrampsClient("https://example.test", "bot", "secret", blog_body_format=raw)
+    assert client.blog_body_format == expected
+
+
+def test_blog_body_format_defaults_to_text():
+    client = GrampsClient("https://example.test", "bot", "secret")
+    assert client.blog_body_format == "text"
