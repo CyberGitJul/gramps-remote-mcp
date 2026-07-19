@@ -40,6 +40,11 @@ def create_server(client, enable_destructive=None):
         return client.set_surname(gramps_id, surname, name_type)
 
     @register
+    def gramps_set_first_name(gramps_id: str, first_name: str) -> dict:
+        """Set a person's primary given (first) name. Non-destructive; returns before/after."""
+        return client.set_first_name(gramps_id, first_name)
+
+    @register
     def gramps_set_gender_bulk(items: list[dict]) -> dict:
         """Set gender for many people in one call, under a single count-guard.
 

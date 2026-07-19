@@ -2601,3 +2601,29 @@ def test_blog_body_format_normalized_failsafe(raw, expected):
 def test_blog_body_format_defaults_to_text():
     client = GrampsClient("https://example.test", "bot", "secret")
     assert client.blog_body_format == "text"
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_set_first_name_updates_primary(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {
+        "gramps_id": "I0036", "handle": "xyz789", "gender": 0,
+        "primary_name": {"first_name": "Ala", "surname_list": [{"surname": "Werneck"}]},
+        "alternate_names": [],
+    }
+    mock_request.side_effect = [
+        make_response([{"gramps_id": "I0036"}]),  # count before
+        make_response([person]),                  # get_person
+        make_response(None),                      # put
+        make_response([{"gramps_id": "I0036"}]),  # count after
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.set_first_name("I0036", "Alla")
+
+    put_body = mock_request.call_args_list[2].kwargs["json"]
+    assert put_body["primary_name"]["first_name"] == "Alla"
+    assert put_body["primary_name"]["surname_list"][0]["surname"] == "Werneck"  # preserved
+    assert result["before"]["primary_name"]["first_name"] == "Ala"
+    assert result["after"]["primary_name"]["first_name"] == "Alla"

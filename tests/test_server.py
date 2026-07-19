@@ -434,3 +434,13 @@ def test_gramps_delete_blog_post_hidden_when_disabled():
 
     assert "gramps_delete_blog_post" not in tools
     assert "gramps_create_blog_post" in tools  # non-destructive blog tools still present
+
+
+def test_gramps_set_first_name_calls_client():
+    client = MagicMock()
+    client.set_first_name.return_value = {"gramps_id": "I0036", "before": {}, "after": {}}
+    _, tools = create_server(client)
+
+    tools["gramps_set_first_name"]("I0036", "Alla")
+
+    client.set_first_name.assert_called_once_with("I0036", "Alla")

@@ -141,6 +141,13 @@ def _surname_mutation(surname, name_type=None):
     return mutate
 
 
+def _first_name_mutation(first_name):
+    """Build a person-mutation that sets the primary given (first) name."""
+    def mutate(person):
+        person["primary_name"]["first_name"] = first_name
+    return mutate
+
+
 class GrampsClient(BlogMixin):
     def __init__(self, base_url, username, password, blog_body_format=None):
         self.base_url = base_url.rstrip("/")
@@ -311,6 +318,9 @@ class GrampsClient(BlogMixin):
 
     def set_surname(self, gramps_id, surname, name_type=None):
         return self._guarded_write(gramps_id, _surname_mutation(surname, name_type))
+
+    def set_first_name(self, gramps_id, first_name):
+        return self._guarded_write(gramps_id, _first_name_mutation(first_name))
 
     def set_gender_bulk(self, items):
         return self._bulk_write(items, lambda item: _gender_mutation(item["gender"]))
