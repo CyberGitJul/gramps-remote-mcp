@@ -2627,3 +2627,28 @@ def test_set_first_name_updates_primary(mock_post, mock_request):
     assert put_body["primary_name"]["surname_list"][0]["surname"] == "Werneck"  # preserved
     assert result["before"]["primary_name"]["first_name"] == "Ala"
     assert result["after"]["primary_name"]["first_name"] == "Alla"
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_add_alternate_name_uses_given_type(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {
+        "gramps_id": "I0036", "handle": "xyz789", "gender": 0,
+        "primary_name": {"first_name": "Alla", "surname_list": [{"surname": "Prentl", "primary": True}]},
+        "alternate_names": [],
+    }
+    mock_request.side_effect = [
+        make_response([{"gramps_id": "I0036"}]),
+        make_response([person]),
+        make_response(None),
+        make_response([{"gramps_id": "I0036"}]),
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    client.add_alternate_name("I0036", "Werneck", name_type="Married Name")
+
+    alt = mock_request.call_args_list[2].kwargs["json"]["alternate_names"][0]
+    assert alt["surname_list"][0]["surname"] == "Werneck"
+    assert alt["type"] == "Married Name"
+    assert alt["first_name"] == "Alla"  # carried from primary

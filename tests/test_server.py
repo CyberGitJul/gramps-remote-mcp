@@ -444,3 +444,13 @@ def test_gramps_set_first_name_calls_client():
     tools["gramps_set_first_name"]("I0036", "Alla")
 
     client.set_first_name.assert_called_once_with("I0036", "Alla")
+
+
+def test_gramps_add_alternate_name_calls_client():
+    client = MagicMock()
+    client.add_alternate_name.return_value = {"gramps_id": "I0036", "before": {}, "after": {}}
+    _, tools = create_server(client)
+
+    tools["gramps_add_alternate_name"]("I0036", "Werneck", "Alla", "Married Name")
+
+    client.add_alternate_name.assert_called_once_with("I0036", "Werneck", "Alla", "Married Name")

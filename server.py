@@ -73,6 +73,20 @@ def create_server(client, enable_destructive=None):
         return client.add_birth_name(gramps_id, surname, first_name)
 
     @register
+    def gramps_add_alternate_name(
+        gramps_id: str,
+        surname: str,
+        first_name: str | None = None,
+        name_type: str = "Birth Name",
+    ) -> dict:
+        """Add an alternate name of a given type (e.g. 'Birth Name', 'Married Name').
+
+        Surname content is taken from the argument; other subfields default. Use
+        it to record a maiden or married name alongside the primary name.
+        """
+        return client.add_alternate_name(gramps_id, surname, first_name, name_type)
+
+    @register
     def gramps_search_person(query: str, limit: int | None = None) -> list:
         """Search people by name (case-insensitive substring match).
 

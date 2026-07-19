@@ -330,14 +330,14 @@ class GrampsClient(BlogMixin):
             items, lambda item: _surname_mutation(item["surname"], item.get("name_type"))
         )
 
-    def add_birth_name(self, gramps_id, surname, first_name=None):
+    def add_alternate_name(self, gramps_id, surname, first_name=None, name_type="Birth Name"):
         def mutate(person):
             primary_name = person["primary_name"]
             primary_surname = primary_name.get("surname_list", [{}])[0]
 
             # Build fresh name record with content fields from primary_name
             # and metadata fields set to Gramps Web API defaults
-            birth_name = {
+            alt_name = {
                 "call": "",
                 "citation_list": [],
                 "date": {
@@ -359,11 +359,15 @@ class GrampsClient(BlogMixin):
                 "suffix": "",
                 "surname_list": [{**primary_surname, "surname": surname}],
                 "title": "",
-                "type": "Birth Name",
+                "type": name_type,
             }
-            person.setdefault("alternate_names", []).append(birth_name)
+            person.setdefault("alternate_names", []).append(alt_name)
 
         return self._guarded_write(gramps_id, mutate)
+
+    def add_birth_name(self, gramps_id, surname, first_name=None):
+        # Backward-compatible alias: a Birth-Name alternate.
+        return self.add_alternate_name(gramps_id, surname, first_name, name_type="Birth Name")
 
     def confirm_person(self, gramps_id):
         tag_handle = self._find_tag_handle(UNCONFIRMED_TAG)
