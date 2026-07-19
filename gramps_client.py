@@ -3,6 +3,8 @@ import unicodedata
 
 import requests
 
+from gramps_blog import BlogMixin
+
 # Tag applied to tentative records; the exact contract that couples add_person
 # (applies it) to confirm_person (removes it). Keep as a single source of truth.
 UNCONFIRMED_TAG = "Unbestätigt"
@@ -139,7 +141,7 @@ def _surname_mutation(surname, name_type=None):
     return mutate
 
 
-class GrampsClient:
+class GrampsClient(BlogMixin):
     def __init__(self, base_url, username, password, blog_body_format=None):
         self.base_url = base_url.rstrip("/")
         self.username = username
