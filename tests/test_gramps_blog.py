@@ -251,6 +251,17 @@ def test_delete_blog_post_requires_confirm_true():
     client._request.assert_not_called()  # no request when unconfirmed
 
 
+def test_delete_blog_post_rejects_truthy_non_true_confirm():
+    # `confirm` must be the literal True: a stray truthy value (e.g. confirm=1)
+    # must still raise BEFORE any network call, so a refactor of
+    # `confirm is not True` to `if not confirm:` cannot silently start deleting.
+    client = make_client()
+    client._request = MagicMock()
+    with pytest.raises(ValueError):
+        client.delete_blog_post("S0002", confirm=1)
+    client._request.assert_not_called()  # no request issued — the guard fires before any I/O
+
+
 def test_delete_blog_post_deletes_source_and_orphaned_note():
     client = make_client()
     source = {"gramps_id": "S0002", "handle": "sH", "note_list": ["nH"]}
