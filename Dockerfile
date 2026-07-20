@@ -5,6 +5,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY gramps_client.py server.py ./
+COPY gramps_client.py gramps_blog.py server.py ./
 
 ENTRYPOINT ["python", "server.py"]
