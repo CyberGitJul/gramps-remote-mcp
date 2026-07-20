@@ -45,6 +45,17 @@ class BlogMixin:
             return new_note["handle"]
         return self._create_note(body)
 
+    def _delete_note_best_effort(self, note_handle):
+        """Delete a just-created body note we can no longer attach (rollback).
+
+        Best-effort: swallow an HTTP error on the cleanup DELETE so it never
+        masks the original failure that triggered the rollback.
+        """
+        try:
+            self._request("DELETE", f"/api/notes/{note_handle}")
+        except requests.HTTPError:
+            pass
+
     def create_blog_post(self, title, body, author=None):
         """Create a blog post: a Source tagged 'Blog' with a body Note.
 
@@ -62,7 +73,11 @@ class BlogMixin:
             "note_list": [note_handle],
             "tag_list": [tag_handle],
         }
-        new_source = self._create_object("sources", source_dict)
+        try:
+            new_source = self._create_object("sources", source_dict)
+        except Exception:
+            self._delete_note_best_effort(note_handle)
+            raise
         count_after = self.count_sources()
         if count_after != count_before + 1:
             raise BlogPostCreateCountMismatchError(
@@ -118,10 +133,16 @@ class BlogMixin:
         note_list = source.get("note_list") or []
         body_html = body_text = note_gramps_id = None
         if note_list:
-            note = self._request("GET", f"/api/notes/{note_list[0]}?formats=html")
-            body_text = (note.get("text") or {}).get("string")
-            body_html = (note.get("formatted") or {}).get("html")
-            note_gramps_id = note.get("gramps_id")
+            try:
+                note = self._request("GET", f"/api/notes/{note_list[0]}?formats=html")
+            except requests.HTTPError as exc:
+                if exc.response is None or exc.response.status_code != 404:
+                    raise
+                note = None
+            if note is not None:
+                body_text = (note.get("text") or {}).get("string")
+                body_html = (note.get("formatted") or {}).get("html")
+                note_gramps_id = note.get("gramps_id")
         return {
             "gramps_id": source["gramps_id"],
             "title": source.get("title"),
@@ -161,7 +182,11 @@ class BlogMixin:
                 note_handle = self._create_body_note(body)
                 note_list.append(note_handle)
                 source["note_list"] = note_list
-                self._request("PUT", f"/api/sources/{source['handle']}", json_body=source)
+                try:
+                    self._request("PUT", f"/api/sources/{source['handle']}", json_body=source)
+                except Exception:
+                    self._delete_note_best_effort(note_handle)
+                    raise
             updated.append("body")
         return {"gramps_id": gramps_id, "updated": updated}
 

@@ -293,3 +293,99 @@ def test_delete_blog_post_count_guard():
     ])
     with pytest.raises(BlogPostDeleteCountMismatchError):
         client.delete_blog_post("S0002", confirm=True)
+
+
+def test_get_blog_post_dangling_note_handle_degrades_to_none_body():
+    # The note handle referenced by note_list was deleted out-of-band; the note
+    # GET 404s. get_blog_post must degrade to a None body (like the empty
+    # note_list path), not propagate a bare HTTPError.
+    resp = MagicMock()
+    resp.status_code = 404
+    err = requests.HTTPError(response=resp)
+    client = make_client()
+    source_with_note_list = {
+        "gramps_id": "S0002", "handle": "sH", "title": "T", "author": "A",
+        "change": 99, "note_list": ["nH"],
+    }
+    client._request = MagicMock(side_effect=[[source_with_note_list], err])
+
+    post = client.get_blog_post("S0002")
+
+    assert post["body_html"] is None
+    assert post["body_text"] is None
+    assert post["note_gramps_id"] is None
+    assert post["gramps_id"] == "S0002"
+    assert post["title"] == "T"
+    assert post["author"] == "A"
+    assert post["change"] == 99
+
+
+def test_get_blog_post_note_non_404_propagates():
+    # A real error fetching the note (e.g. 500) must NOT be masked as an empty
+    # body — only a 404 (dangling handle) degrades gracefully.
+    resp = MagicMock()
+    resp.status_code = 500
+    err = requests.HTTPError(response=resp)
+    client = make_client()
+    source_with_note_list = {
+        "gramps_id": "S0002", "handle": "sH", "title": "T", "author": "A",
+        "change": 99, "note_list": ["nH"],
+    }
+    client._request = MagicMock(side_effect=[[source_with_note_list], err])
+
+    with pytest.raises(requests.HTTPError):
+        client.get_blog_post("S0002")
+
+
+def test_create_blog_post_rolls_back_note_when_source_creation_fails():
+    # If the Source write fails after the body note was already created, the
+    # orphaned note must be rolled back (best-effort DELETE) and the ORIGINAL
+    # exception must still propagate.
+    resp = MagicMock()
+    resp.status_code = 500
+    err = requests.HTTPError(response=resp)
+    client = make_client("text")
+    client._request = MagicMock(side_effect=[
+        [{"gramps_id": "S0001"}],                       # count_sources before
+        [{"name": "Blog", "handle": "tagBlog"}],         # _find_tag_handle
+        [{"_class": "Note", "type": "add", "handle": "nH",
+          "new": {"_class": "Note", "handle": "nH"}}],   # POST note
+        err,                                             # POST source fails
+        None,                                             # rollback DELETE note
+    ])
+
+    with pytest.raises(requests.HTTPError):
+        client.create_blog_post("My title", "Body text", author="Max")
+
+    delete_calls = [
+        c for c in client._request.call_args_list
+        if c.args[:2] == ("DELETE", "/api/notes/nH")
+    ]
+    assert delete_calls, "expected a rollback DELETE of the orphaned note"
+
+
+def test_update_blog_post_rolls_back_note_when_source_put_fails():
+    # Same rollback contract for update_blog_post's no-note branch: if the
+    # Source PUT fails after the body note was created, delete the orphaned
+    # note and re-raise the ORIGINAL exception.
+    resp = MagicMock()
+    resp.status_code = 500
+    err = requests.HTTPError(response=resp)
+    client = make_client("text")
+    source = {"gramps_id": "S0002", "handle": "sH", "note_list": []}
+    client._request = MagicMock(side_effect=[
+        [source],                                        # _get_blog_source
+        [{"_class": "Note", "type": "add", "handle": "nNew",
+          "new": {"_class": "Note", "handle": "nNew"}}],  # _create_body_note POST
+        err,                                              # PUT source fails
+        None,                                              # rollback DELETE note
+    ])
+
+    with pytest.raises(requests.HTTPError):
+        client.update_blog_post("S0002", body="<p>new</p>")
+
+    delete_calls = [
+        c for c in client._request.call_args_list
+        if c.args[:2] == ("DELETE", "/api/notes/nNew")
+    ]
+    assert delete_calls, "expected a rollback DELETE of the orphaned note"
