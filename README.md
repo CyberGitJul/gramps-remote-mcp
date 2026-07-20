@@ -210,6 +210,27 @@ python3 -m venv .venv
 The tests mock the Gramps Web HTTP layer, so no live instance is required. Test fixtures
 use generic placeholder names.
 
+### Linting
+
+This project uses [ruff](https://docs.astral.sh/ruff/) for linting and formatting
+(config in `pyproject.toml`):
+
+```bash
+.venv/bin/ruff check .          # lint
+.venv/bin/ruff format .         # auto-format
+.venv/bin/ruff format --check . # verify formatting (what CI checks)
+```
+
+Enable the git hooks so linting runs on every commit (auto-fixing) and blocks a push
+when anything is unclean:
+
+```bash
+.venv/bin/pre-commit install --hook-type pre-commit --hook-type pre-push
+```
+
+CI (`.github/workflows/lint.yml`) runs the same checks on every pull request; a green
+`ruff` check is required to merge into `main`.
+
 ## Notes on the Gramps Web API
 
 * [`docs/blog-crud.md`](docs/blog-crud.md) — how blog posts are modelled in Gramps Web
