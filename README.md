@@ -13,9 +13,9 @@ record-count guards.
 
 ## Tools
 
-The server exposes 18 tools over the MCP **stdio** transport, plus optional
-destructive tools (`gramps_delete_person`, `gramps_delete_family`) that are registered
-only when explicitly enabled — see [Destructive tools](#destructive-tools).
+The server exposes 25 tools over the MCP **stdio** transport, plus 3 optional destructive
+tools (`gramps_delete_person`, `gramps_delete_family`, `gramps_delete_blog_post`) that are
+registered only when explicitly enabled — see [Destructive tools](#destructive-tools).
 
 **Read**
 
@@ -35,15 +35,34 @@ only when explicitly enabled — see [Destructive tools](#destructive-tools).
 | --- | --- |
 | `gramps_set_gender(gramps_id, gender)` | Set a person's gender (`0`=Female, `1`=Male, `2`=Unknown, `3`=Other). |
 | `gramps_set_surname(gramps_id, surname, name_type=None)` | Set the primary surname, optionally the name type (e.g. `Married Name`). |
+| `gramps_set_first_name(gramps_id, first_name)` | Set a person's primary given (first) name. Non-destructive; returns before/after. |
 | `gramps_set_gender_bulk(items)` | Set gender for many people in one call (`items` = `[{"gramps_id", "gender"}, …]`) under a single count-guard; best-effort, per-item results and errors. |
 | `gramps_set_surname_bulk(items)` | Set the primary surname for many people in one call (`items` = `[{"gramps_id", "surname", "name_type"?}, …]`) under a single count-guard; best-effort. |
 | `gramps_add_birth_name(gramps_id, surname, first_name=None)` | Add a `Birth Name` alternate-name entry. |
+| `gramps_add_alternate_name(gramps_id, surname, first_name=None, name_type="Birth Name")` | Add an alternate name of a given type (e.g. `Birth Name`, `Married Name`). Surname content is taken from the argument; other subfields default. |
+| `gramps_swap_primary_name(gramps_id, alt_index=0)` | Swap a person's primary name with one of their alternate names (`alt_index` selects which, default the first). Promotes e.g. a Birth Name to primary and demotes the Married Name to an alternate; errors if there is no alternate at that index. |
 | `gramps_add_person(first_name, surname, gender, birth_year=None, birth_quality=None, birth_year_to=None, note=None)` | Create a new person, tagged as **unconfirmed** for later review. Returns the new Gramps ID. |
 | `gramps_add_family(spouse_a_id, spouse_b_id=None)` | Create a family linking one or two spouses. Returns the new family's Gramps ID. |
 | `gramps_add_child_to_family(family_id, child_id)` | Link an existing person as a child of an existing family. |
 | `gramps_set_family_parent(family_id, gramps_id, role)` | Set the father or mother of an **existing** family (`role` = `father`/`mother`, an explicit bloodline slot — never reordered by sex, unlike `gramps_add_family`). Adds a missing parent or replaces the wrong one (refusing to set one person as both parents); returns the displaced parent as `previous`. |
 | `gramps_remove_child_from_family(family_id, child_id)` | Remove a person from a family's children (inverse of `gramps_add_child_to_family`) — e.g. detach a spouse wrongly recorded as a child. Siblings are left intact. |
 | `gramps_confirm_person(gramps_id)` | Remove the **unconfirmed** tag, marking a person as confirmed. |
+
+### Blog posts
+
+A blog post is a `Source` object tagged `Blog`, with its body text stored in the source's
+first note — not a dedicated blog record (see [`docs/blog-crud.md`](docs/blog-crud.md) for
+the full data model). The body's storage format is controlled by `GRAMPS_BLOG_BODY_FORMAT`:
+plain text by default, or HTML (rendered and sanitized server-side) when set to `html`.
+Deleting a blog post (`gramps_delete_blog_post`) is destructive and only available when the
+destructive-tools gate is on — see [Destructive tools](#destructive-tools).
+
+| Tool | Purpose |
+| --- | --- |
+| `gramps_create_blog_post(title, body, author=None)` | Create a blog post (a Source tagged `Blog` + a body note). Body stored per `GRAMPS_BLOG_BODY_FORMAT` (plain text default, or HTML). Returns the new source gramps_id (e.g. `S0002`). |
+| `gramps_list_blog_posts(page=None, pagesize=None)` | List blog posts (Sources tagged `Blog`), newest first. Returns `[{gramps_id, title, author, change}]`. `page` is 1-based, `pagesize` caps rows; omit both for all. |
+| `gramps_get_blog_post(gramps_id)` | Fetch one blog post by its Source Gramps ID. Returns title, author, change (unix ts), the body as rendered HTML (`body_html`) and raw string (`body_text`), and `note_gramps_id`. |
+| `gramps_update_blog_post(gramps_id, title=None, body=None, author=None)` | Update a blog post's title, body, and/or author (only what you pass). `body` is stored per `GRAMPS_BLOG_BODY_FORMAT` and replaces the existing note's text. Returns `{gramps_id, updated}`. |
 
 ### Destructive tools
 
@@ -54,6 +73,7 @@ clients never see them unless you opt in:
 | --- | --- |
 | `gramps_delete_person(gramps_id, confirm)` | Permanently delete a person (for duplicates / erroneous entries). Requires `confirm=True` and guards that the people count drops by exactly one. Deleting a linked person unlinks them from their families (the slot is cleared) rather than cascading. Notes attached only to this person are cleaned up too (shared notes are kept); deleted note handles are returned as `deleted_notes`. |
 | `gramps_delete_family(family_id, confirm)` | Permanently delete a family — for cleaning up an orphaned/childless family left behind after re-homing its children. Requires `confirm=True`, refuses if the family still has children (remove them first), and guards that the family count drops by exactly one. |
+| `gramps_delete_blog_post(gramps_id, confirm)` | Permanently delete a blog post. Requires `confirm=True`. Removes the Source and cleans up its body note if now orphaned (shared notes are kept); guards that the source count drops by exactly one. |
 
 To enable it, set `GRAMPS_ENABLE_DESTRUCTIVE=1` in the server's environment; the account
 also needs delete rights on the tree. Leave it unset for a read/edit-only deployment.

@@ -122,6 +122,12 @@ NOTE_HANDLE=$(curl -fsS -X POST "$BASE/notes/" "${AUTH[@]}" -d '{
 * `type` darf als Klartext-String übergeben werden (`"General"`), der Server konvertiert nach
   `{"_class":"NoteType","value":1,"string":""}` ✅.
 * `format`: `0` = *flowed* (Umbrüche werden zu Absätzen), `1` = *formatted* (Whitespace bleibt) 📖.
+* Für eine **HTML-Body-Notiz** (`GRAMPS_BLOG_BODY_FORMAT=html`) ist der zuverlässige Payload das
+  **vollständige** Typ-Objekt `{"_class": "NoteType", "value": 24, "string": ""}` (`24` =
+  `HTML_CODE`, verifiziert gegen Gramps Core `gramps/gen/lib/notetype.py`) 📖. Der Klartext-String
+  ist dabei **case-sensitive** (`"Html code"`, nicht `"HTML code"` o. ä.) und fällt bei falscher
+  Schreibweise **stillschweigend** auf `CUSTOM` zurück statt zu fehlern — deshalb für HTML-Bodies
+  immer das volle Objekt senden, nicht den String.
 
 ### 3.4 Source (= der Blog-Post) anlegen
 
@@ -308,6 +314,17 @@ sondern als Liste von `StyledTextTag`-Objekten mit Zeichen-Ranges:
 LINK=8, STRIKETHROUGH=9, SUBSCRIPT=10`.
 
 Bei `LINK` steht die Ziel-URL in `value`; interne Verweise nutzen `gramps://<Class>/handle/<handle>` 📖.
+
+### 7.1 HTML-Body-Notizen (`NoteType.HTML_CODE`)
+
+Getrennt von den StyledText-Tags oben: Für Blog-Post-Bodies im HTML-Modus
+(`GRAMPS_BLOG_BODY_FORMAT=html`, s. §3.3) wird keine StyledText-Formatierung verwendet, sondern
+die rohe Note vom Typ `HTML_CODE` (`value: 24`) — der Server rendert und saniert deren
+`text.string` beim Lesen mit `formats=html` als HTML.
+
+> ⏳ **Offen (Task 12 / Live-Smoke):** Die genaue **Bleach-Allow-List** (erlaubte Tags/Attribute),
+> die der Server beim Rendern/Sanitizing eines `HTML_CODE`-Bodies anwendet, ist noch **nicht**
+> bestätigt — wird beim Live-Smoke gegen eine echte Instanz verifiziert und hier nachgetragen.
 
 **Akzeptierte Payload-Varianten für `name`** (live durchprobiert ✅):
 
