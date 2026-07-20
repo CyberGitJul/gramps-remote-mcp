@@ -369,6 +369,25 @@ class GrampsClient(BlogMixin):
         # Backward-compatible alias: a Birth-Name alternate.
         return self.add_alternate_name(gramps_id, surname, first_name, name_type="Birth Name")
 
+    def swap_primary_name(self, gramps_id, alt_index=0):
+        """Swap the primary name with an alternate name (default the first).
+
+        The displaced primary becomes that alternate. Non-destructive (PUT);
+        returns before/after. Raises ValueError if there is no alternate name at
+        alt_index (nothing is written).
+        """
+        def mutate(person):
+            alts = person.get("alternate_names") or []
+            if alt_index < 0 or alt_index >= len(alts):
+                raise ValueError(f"no alternate name at index {alt_index} to swap")
+            alts = list(alts)
+            primary = person["primary_name"]
+            person["primary_name"] = alts[alt_index]
+            alts[alt_index] = primary
+            person["alternate_names"] = alts
+
+        return self._guarded_write(gramps_id, mutate)
+
     def confirm_person(self, gramps_id):
         tag_handle = self._find_tag_handle(UNCONFIRMED_TAG)
 

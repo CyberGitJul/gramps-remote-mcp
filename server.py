@@ -87,6 +87,16 @@ def create_server(client, enable_destructive=None):
         return client.add_alternate_name(gramps_id, surname, first_name, name_type)
 
     @register
+    def gramps_swap_primary_name(gramps_id: str, alt_index: int = 0) -> dict:
+        """Swap a person's primary name with one of their alternate names.
+
+        alt_index selects which alternate (default the first). Use it to promote
+        e.g. a Birth Name to primary and demote the Married Name to an alternate.
+        Errors if there is no alternate name at that index.
+        """
+        return client.swap_primary_name(gramps_id, alt_index)
+
+    @register
     def gramps_search_person(query: str, limit: int | None = None) -> list:
         """Search people by name (case-insensitive substring match).
 

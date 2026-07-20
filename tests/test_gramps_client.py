@@ -2652,3 +2652,53 @@ def test_add_alternate_name_uses_given_type(mock_post, mock_request):
     assert alt["surname_list"][0]["surname"] == "Werneck"
     assert alt["type"] == "Married Name"
     assert alt["first_name"] == "Alla"  # carried from primary
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_swap_primary_name_swaps_with_alt(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {
+        "gramps_id": "I0036", "handle": "xyz789", "gender": 0,
+        "primary_name": {"first_name": "Alla", "type": "Married Name",
+                         "surname_list": [{"surname": "Werneck", "primary": True}]},
+        "alternate_names": [
+            {"first_name": "Alla", "type": "Birth Name",
+             "surname_list": [{"surname": "Prentl", "primary": True}]}
+        ],
+    }
+    mock_request.side_effect = [
+        make_response([{"gramps_id": "I0036"}]),
+        make_response([person]),
+        make_response(None),
+        make_response([{"gramps_id": "I0036"}]),
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.swap_primary_name("I0036")
+
+    put_body = mock_request.call_args_list[2].kwargs["json"]
+    assert put_body["primary_name"]["type"] == "Birth Name"
+    assert put_body["primary_name"]["surname_list"][0]["surname"] == "Prentl"
+    assert put_body["alternate_names"][0]["type"] == "Married Name"
+    assert put_body["alternate_names"][0]["surname_list"][0]["surname"] == "Werneck"
+    assert result["after"]["primary_name"]["type"] == "Birth Name"
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_swap_primary_name_out_of_range_raises_without_write(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {"gramps_id": "I0036", "handle": "xyz789", "gender": 0,
+              "primary_name": {"first_name": "A", "surname_list": [{"surname": "B"}]},
+              "alternate_names": []}
+    mock_request.side_effect = [
+        make_response([{"gramps_id": "I0036"}]),  # count before
+        make_response([person]),                  # get_person
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(ValueError):
+        client.swap_primary_name("I0036")
+    # only count + get were issued; no PUT
+    assert all(c.args[0] != "PUT" for c in mock_request.call_args_list)
