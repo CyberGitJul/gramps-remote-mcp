@@ -127,24 +127,30 @@ def _name_strings(name):
 
 def _gender_mutation(gender):
     """Build a person-mutation that sets gender. Shared by single + bulk writes."""
+
     def mutate(person):
         person["gender"] = gender
+
     return mutate
 
 
 def _surname_mutation(surname, name_type=None):
     """Build a person-mutation that sets the primary surname (+ optional name type)."""
+
     def mutate(person):
         person["primary_name"]["surname_list"][0]["surname"] = surname
         if name_type is not None:
             person["primary_name"]["type"] = name_type
+
     return mutate
 
 
 def _first_name_mutation(first_name):
     """Build a person-mutation that sets the primary given (first) name."""
+
     def mutate(person):
         person["primary_name"]["first_name"] = first_name
+
     return mutate
 
 
@@ -252,12 +258,14 @@ class GrampsClient(BlogMixin):
         return self._request("PUT", f"/api/people/{handle}", json_body=obj)
 
     def _snapshot(self, person):
-        return copy.deepcopy({
-            "gender": person.get("gender"),
-            "primary_name": person.get("primary_name"),
-            "alternate_names": person.get("alternate_names"),
-            "tag_list": person.get("tag_list"),
-        })
+        return copy.deepcopy(
+            {
+                "gender": person.get("gender"),
+                "primary_name": person.get("primary_name"),
+                "alternate_names": person.get("alternate_names"),
+                "tag_list": person.get("tag_list"),
+            }
+        )
 
     def _write_person(self, gramps_id, mutate_fn):
         """Fetch, snapshot, mutate, and PUT one person; return before/after.
@@ -277,9 +285,7 @@ class GrampsClient(BlogMixin):
         result = self._write_person(gramps_id, mutate_fn)
         count_after = self.count_people()
         if count_after != count_before:
-            raise PersonCountMismatchError(
-                f"Person count changed: {count_before} -> {count_after}"
-            )
+            raise PersonCountMismatchError(f"Person count changed: {count_before} -> {count_after}")
         return result
 
     def _bulk_write(self, items, mutation_for):
@@ -350,7 +356,9 @@ class GrampsClient(BlogMixin):
                 },
                 "display_as": 0,
                 "famnick": "",
-                "first_name": first_name if first_name is not None else primary_name.get("first_name", ""),
+                "first_name": first_name
+                if first_name is not None
+                else primary_name.get("first_name", ""),
                 "group_as": "",
                 "nick": "",
                 "note_list": [],
@@ -376,6 +384,7 @@ class GrampsClient(BlogMixin):
         returns before/after. Raises ValueError if there is no alternate name at
         alt_index (nothing is written).
         """
+
         def mutate(person):
             alts = person.get("alternate_names") or []
             if alt_index < 0 or alt_index >= len(alts):
@@ -741,9 +750,7 @@ class GrampsClient(BlogMixin):
                 family = self._get_family_by_handle(fam_handle)
                 for child_ref in family.get("child_ref_list", []):
                     child = self._get_person_by_handle(child_ref["ref"])
-                    children.append(
-                        self._build_descendant_node(child, remaining_depth - 1)
-                    )
+                    children.append(self._build_descendant_node(child, remaining_depth - 1))
         return self._descendant_node(person, children)
 
     def get_descendants(self, gramps_id, grade=1):
@@ -765,9 +772,7 @@ class GrampsClient(BlogMixin):
                 for parent_handle in (family.get("father_handle"), family.get("mother_handle")):
                     if parent_handle:
                         parent = self._get_person_by_handle(parent_handle)
-                        parents.append(
-                            self._build_ancestor_node(parent, remaining_depth - 1)
-                        )
+                        parents.append(self._build_ancestor_node(parent, remaining_depth - 1))
         return self._ancestor_node(person, parents)
 
     def get_ancestors(self, gramps_id, grade=1):
@@ -799,30 +804,36 @@ class GrampsClient(BlogMixin):
         parent_families = []
         for fam_handle in root.get("parent_family_list", []):
             family = self._get_family_by_handle(fam_handle)
-            parent_families.append({
-                "family_gramps_id": family.get("gramps_id"),
-                "father": self._summary_for_handle(family.get("father_handle")),
-                "mother": self._summary_for_handle(family.get("mother_handle")),
-            })
+            parent_families.append(
+                {
+                    "family_gramps_id": family.get("gramps_id"),
+                    "father": self._summary_for_handle(family.get("father_handle")),
+                    "mother": self._summary_for_handle(family.get("mother_handle")),
+                }
+            )
 
         families = []
         for fam_handle in root.get("family_list", []):
             family = self._get_family_by_handle(fam_handle)
             partner_handle = next(
-                (h for h in (family.get("father_handle"), family.get("mother_handle"))
-                 if h and h != root_handle),
+                (
+                    h
+                    for h in (family.get("father_handle"), family.get("mother_handle"))
+                    if h and h != root_handle
+                ),
                 None,
             )
             partner = self._summary_for_handle(partner_handle)
             children = [
-                self._summary_for_handle(ref["ref"])
-                for ref in family.get("child_ref_list", [])
+                self._summary_for_handle(ref["ref"]) for ref in family.get("child_ref_list", [])
             ]
-            families.append({
-                "family_gramps_id": family.get("gramps_id"),
-                "partner": partner,
-                "children": children,
-            })
+            families.append(
+                {
+                    "family_gramps_id": family.get("gramps_id"),
+                    "partner": partner,
+                    "children": children,
+                }
+            )
 
         return {
             **self._person_summary(root),

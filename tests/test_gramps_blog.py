@@ -14,15 +14,25 @@ from gramps_client import GrampsClient
 # side_effect entry is exactly what the real _request returns (a list, dict, or
 # None) for that call, in call order.
 def make_client(blog_body_format="text"):
-    client = GrampsClient("https://example.test", "bot", "secret", blog_body_format=blog_body_format)
+    client = GrampsClient(
+        "https://example.test", "bot", "secret", blog_body_format=blog_body_format
+    )
     client._access_token = "tok"  # skip login; _request is mocked anyway
     return client
 
 
 def test_create_body_note_text_mode_is_general_styledtext():
     client = make_client("text")
-    client._request = MagicMock(return_value=[{"_class": "Note", "type": "add", "handle": "n1",
-                                               "new": {"_class": "Note", "handle": "n1"}}])
+    client._request = MagicMock(
+        return_value=[
+            {
+                "_class": "Note",
+                "type": "add",
+                "handle": "n1",
+                "new": {"_class": "Note", "handle": "n1"},
+            }
+        ]
+    )
     handle = client._create_body_note("hello")
     assert handle == "n1"
     method, path = client._request.call_args.args[0], client._request.call_args.args[1]
@@ -34,8 +44,16 @@ def test_create_body_note_text_mode_is_general_styledtext():
 
 def test_create_body_note_html_mode_sets_html_code_type():
     client = make_client("html")
-    client._request = MagicMock(return_value=[{"_class": "Note", "type": "add", "handle": "n2",
-                                               "new": {"_class": "Note", "handle": "n2"}}])
+    client._request = MagicMock(
+        return_value=[
+            {
+                "_class": "Note",
+                "type": "add",
+                "handle": "n2",
+                "new": {"_class": "Note", "handle": "n2"},
+            }
+        ]
+    )
     handle = client._create_body_note("<p>hi</p>")
     assert handle == "n2"
     body = client._request.call_args.kwargs["json_body"]
@@ -52,15 +70,29 @@ def test_count_sources_counts_the_list():
 
 def test_create_blog_post_posts_note_then_tagged_source():
     client = make_client("text")
-    client._request = MagicMock(side_effect=[
-        [{"gramps_id": "S0001"}],                       # count_sources before
-        [{"name": "Blog", "handle": "tagBlog"}],        # _find_tag_handle (tags list)
-        [{"_class": "Note", "type": "add", "handle": "nH",
-          "new": {"_class": "Note", "handle": "nH"}}],  # POST note
-        [{"_class": "Source", "type": "add", "handle": "sH",
-          "new": {"_class": "Source", "handle": "sH", "gramps_id": "S0002"}}],  # POST source
-        [{"gramps_id": "S0001"}, {"gramps_id": "S0002"}],  # count_sources after
-    ])
+    client._request = MagicMock(
+        side_effect=[
+            [{"gramps_id": "S0001"}],  # count_sources before
+            [{"name": "Blog", "handle": "tagBlog"}],  # _find_tag_handle (tags list)
+            [
+                {
+                    "_class": "Note",
+                    "type": "add",
+                    "handle": "nH",
+                    "new": {"_class": "Note", "handle": "nH"},
+                }
+            ],  # POST note
+            [
+                {
+                    "_class": "Source",
+                    "type": "add",
+                    "handle": "sH",
+                    "new": {"_class": "Source", "handle": "sH", "gramps_id": "S0002"},
+                }
+            ],  # POST source
+            [{"gramps_id": "S0001"}, {"gramps_id": "S0002"}],  # count_sources after
+        ]
+    )
 
     gid = client.create_blog_post("My title", "Body text", author="Max")
 
@@ -75,21 +107,40 @@ def test_create_blog_post_posts_note_then_tagged_source():
 
 def test_create_blog_post_count_guard():
     client = make_client("text")
-    client._request = MagicMock(side_effect=[
-        [{"gramps_id": "S0001"}],                       # before = 1
-        [{"name": "Blog", "handle": "tagBlog"}],
-        [{"_class": "Note", "type": "add", "handle": "nH", "new": {"_class": "Note", "handle": "nH"}}],
-        [{"_class": "Source", "type": "add", "handle": "sH", "new": {"_class": "Source", "handle": "sH", "gramps_id": "S0002"}}],
-        [{"gramps_id": "S0001"}],                       # after = 1 (no increase!)
-    ])
+    client._request = MagicMock(
+        side_effect=[
+            [{"gramps_id": "S0001"}],  # before = 1
+            [{"name": "Blog", "handle": "tagBlog"}],
+            [
+                {
+                    "_class": "Note",
+                    "type": "add",
+                    "handle": "nH",
+                    "new": {"_class": "Note", "handle": "nH"},
+                }
+            ],
+            [
+                {
+                    "_class": "Source",
+                    "type": "add",
+                    "handle": "sH",
+                    "new": {"_class": "Source", "handle": "sH", "gramps_id": "S0002"},
+                }
+            ],
+            [{"gramps_id": "S0001"}],  # after = 1 (no increase!)
+        ]
+    )
     from gramps_blog import BlogPostCreateCountMismatchError
+
     with pytest.raises(BlogPostCreateCountMismatchError):
         client.create_blog_post("t", "b")
 
 
 def test_list_blog_posts_query_shape():
     client = make_client()
-    client._request = MagicMock(return_value=[{"gramps_id": "S0002", "title": "t", "author": "a", "change": 5}])
+    client._request = MagicMock(
+        return_value=[{"gramps_id": "S0002", "title": "t", "author": "a", "change": 5}]
+    )
 
     result = client.list_blog_posts()
 
@@ -114,19 +165,36 @@ def test_list_blog_posts_defaults_page_when_only_pagesize():
 
 def test_get_blog_post_renders_body_html():
     client = make_client()
-    client._request = MagicMock(side_effect=[
-        [{"gramps_id": "S0002", "handle": "sH", "title": "T", "author": "A",
-          "change": 99, "note_list": ["nH"]}],                 # source by gramps_id
-        {"gramps_id": "N0001", "handle": "nH",
-         "text": {"string": "<p>hi</p>"},
-         "formatted": {"html": "<div><p>hi</p></div>"}},        # note formats=html
-    ])
+    client._request = MagicMock(
+        side_effect=[
+            [
+                {
+                    "gramps_id": "S0002",
+                    "handle": "sH",
+                    "title": "T",
+                    "author": "A",
+                    "change": 99,
+                    "note_list": ["nH"],
+                }
+            ],  # source by gramps_id
+            {
+                "gramps_id": "N0001",
+                "handle": "nH",
+                "text": {"string": "<p>hi</p>"},
+                "formatted": {"html": "<div><p>hi</p></div>"},
+            },  # note formats=html
+        ]
+    )
 
     post = client.get_blog_post("S0002")
 
     assert post == {
-        "gramps_id": "S0002", "title": "T", "author": "A", "change": 99,
-        "body_html": "<div><p>hi</p></div>", "body_text": "<p>hi</p>",
+        "gramps_id": "S0002",
+        "title": "T",
+        "author": "A",
+        "change": 99,
+        "body_html": "<div><p>hi</p></div>",
+        "body_text": "<p>hi</p>",
         "note_gramps_id": "N0001",
     }
     assert client._request.call_args_list[1].args[:2] == ("GET", "/api/notes/nH?formats=html")
@@ -134,12 +202,24 @@ def test_get_blog_post_renders_body_html():
 
 def test_get_blog_post_empty_note_list_ok():
     client = make_client()
-    client._request = MagicMock(side_effect=[
-        [{"gramps_id": "S0002", "handle": "sH", "title": "T", "author": "A",
-          "change": 99, "note_list": []}],
-    ])
+    client._request = MagicMock(
+        side_effect=[
+            [
+                {
+                    "gramps_id": "S0002",
+                    "handle": "sH",
+                    "title": "T",
+                    "author": "A",
+                    "change": 99,
+                    "note_list": [],
+                }
+            ],
+        ]
+    )
     post = client.get_blog_post("S0002")
-    assert post["body_html"] is None and post["body_text"] is None and post["note_gramps_id"] is None
+    assert (
+        post["body_html"] is None and post["body_text"] is None and post["note_gramps_id"] is None
+    )
 
 
 def test_get_blog_post_not_found_raises():
@@ -175,12 +255,20 @@ def test_get_blog_post_non_404_http_error_propagates():
 
 def test_update_blog_post_title_author_rmw_on_source():
     client = make_client()
-    source = {"gramps_id": "S0002", "handle": "sH", "title": "old", "author": "old",
-              "note_list": ["nH"], "tag_list": ["tagBlog"]}
-    client._request = MagicMock(side_effect=[
-        [source],   # _get_blog_source
-        None,       # PUT source
-    ])
+    source = {
+        "gramps_id": "S0002",
+        "handle": "sH",
+        "title": "old",
+        "author": "old",
+        "note_list": ["nH"],
+        "tag_list": ["tagBlog"],
+    }
+    client._request = MagicMock(
+        side_effect=[
+            [source],  # _get_blog_source
+            None,  # PUT source
+        ]
+    )
 
     result = client.update_blog_post("S0002", title="new", author="newauth")
 
@@ -195,13 +283,18 @@ def test_update_blog_post_title_author_rmw_on_source():
 def test_update_blog_post_body_rmw_on_note_preserves_type():
     client = make_client()
     source = {"gramps_id": "S0002", "handle": "sH", "note_list": ["nH"]}
-    note = {"handle": "nH", "text": {"_class": "StyledText", "tags": [], "string": "old"},
-            "type": {"_class": "NoteType", "value": 24, "string": ""}}
-    client._request = MagicMock(side_effect=[
-        [source],   # _get_blog_source
-        note,       # GET note
-        None,       # PUT note
-    ])
+    note = {
+        "handle": "nH",
+        "text": {"_class": "StyledText", "tags": [], "string": "old"},
+        "type": {"_class": "NoteType", "value": 24, "string": ""},
+    }
+    client._request = MagicMock(
+        side_effect=[
+            [source],  # _get_blog_source
+            note,  # GET note
+            None,  # PUT note
+        ]
+    )
 
     result = client.update_blog_post("S0002", body="<p>new</p>")
 
@@ -215,8 +308,14 @@ def test_update_blog_post_body_rmw_on_note_preserves_type():
 
 def test_update_blog_post_no_fields_is_noop():
     client = make_client()
-    source = {"gramps_id": "S0002", "handle": "sH", "title": "old", "author": "old",
-              "note_list": ["nH"], "tag_list": ["tagBlog"]}
+    source = {
+        "gramps_id": "S0002",
+        "handle": "sH",
+        "title": "old",
+        "author": "old",
+        "note_list": ["nH"],
+        "tag_list": ["tagBlog"],
+    }
     client._request = MagicMock(side_effect=[[source]])  # only _get_blog_source is consumed
 
     result = client.update_blog_post("S0002")
@@ -228,12 +327,20 @@ def test_update_blog_post_no_fields_is_noop():
 def test_update_blog_post_body_creates_note_when_source_has_none():
     client = make_client("text")
     source = {"gramps_id": "S0002", "handle": "sH", "note_list": []}
-    client._request = MagicMock(side_effect=[
-        [source],   # _get_blog_source
-        [{"_class": "Note", "type": "add", "handle": "nNew",
-          "new": {"_class": "Note", "handle": "nNew"}}],  # _create_body_note -> _create_note POST
-        None,       # PUT source
-    ])
+    client._request = MagicMock(
+        side_effect=[
+            [source],  # _get_blog_source
+            [
+                {
+                    "_class": "Note",
+                    "type": "add",
+                    "handle": "nNew",
+                    "new": {"_class": "Note", "handle": "nNew"},
+                }
+            ],  # _create_body_note -> _create_note POST
+            None,  # PUT source
+        ]
+    )
 
     result = client.update_blog_post("S0002", body="<p>new</p>")
 
@@ -265,14 +372,16 @@ def test_delete_blog_post_rejects_truthy_non_true_confirm():
 def test_delete_blog_post_deletes_source_and_orphaned_note():
     client = make_client()
     source = {"gramps_id": "S0002", "handle": "sH", "note_list": ["nH"]}
-    client._request = MagicMock(side_effect=[
-        [source],                                      # _get_blog_source
-        [{"gramps_id": "S0002"}, {"gramps_id": "S0003"}],  # count before = 2
-        None,                                          # DELETE source
-        [{"gramps_id": "S0003"}],                      # count after = 1
-        {"handle": "nH", "backlinks": {}},             # note backlinks (orphaned)
-        None,                                          # DELETE note
-    ])
+    client._request = MagicMock(
+        side_effect=[
+            [source],  # _get_blog_source
+            [{"gramps_id": "S0002"}, {"gramps_id": "S0003"}],  # count before = 2
+            None,  # DELETE source
+            [{"gramps_id": "S0003"}],  # count after = 1
+            {"handle": "nH", "backlinks": {}},  # note backlinks (orphaned)
+            None,  # DELETE note
+        ]
+    )
 
     result = client.delete_blog_post("S0002", confirm=True)
 
@@ -285,12 +394,14 @@ def test_delete_blog_post_deletes_source_and_orphaned_note():
 def test_delete_blog_post_count_guard():
     client = make_client()
     source = {"gramps_id": "S0002", "handle": "sH", "note_list": []}
-    client._request = MagicMock(side_effect=[
-        [source],
-        [{"gramps_id": "S0002"}, {"gramps_id": "S0003"}],  # before = 2
-        None,
-        [{"gramps_id": "S0002"}, {"gramps_id": "S0003"}],  # after = 2 (unchanged!)
-    ])
+    client._request = MagicMock(
+        side_effect=[
+            [source],
+            [{"gramps_id": "S0002"}, {"gramps_id": "S0003"}],  # before = 2
+            None,
+            [{"gramps_id": "S0002"}, {"gramps_id": "S0003"}],  # after = 2 (unchanged!)
+        ]
+    )
     with pytest.raises(BlogPostDeleteCountMismatchError):
         client.delete_blog_post("S0002", confirm=True)
 
@@ -304,8 +415,12 @@ def test_get_blog_post_dangling_note_handle_degrades_to_none_body():
     err = requests.HTTPError(response=resp)
     client = make_client()
     source_with_note_list = {
-        "gramps_id": "S0002", "handle": "sH", "title": "T", "author": "A",
-        "change": 99, "note_list": ["nH"],
+        "gramps_id": "S0002",
+        "handle": "sH",
+        "title": "T",
+        "author": "A",
+        "change": 99,
+        "note_list": ["nH"],
     }
     client._request = MagicMock(side_effect=[[source_with_note_list], err])
 
@@ -328,8 +443,12 @@ def test_get_blog_post_note_non_404_propagates():
     err = requests.HTTPError(response=resp)
     client = make_client()
     source_with_note_list = {
-        "gramps_id": "S0002", "handle": "sH", "title": "T", "author": "A",
-        "change": 99, "note_list": ["nH"],
+        "gramps_id": "S0002",
+        "handle": "sH",
+        "title": "T",
+        "author": "A",
+        "change": 99,
+        "note_list": ["nH"],
     }
     client._request = MagicMock(side_effect=[[source_with_note_list], err])
 
@@ -345,21 +464,28 @@ def test_create_blog_post_rolls_back_note_when_source_creation_fails():
     resp.status_code = 500
     err = requests.HTTPError(response=resp)
     client = make_client("text")
-    client._request = MagicMock(side_effect=[
-        [{"gramps_id": "S0001"}],                       # count_sources before
-        [{"name": "Blog", "handle": "tagBlog"}],         # _find_tag_handle
-        [{"_class": "Note", "type": "add", "handle": "nH",
-          "new": {"_class": "Note", "handle": "nH"}}],   # POST note
-        err,                                             # POST source fails
-        None,                                             # rollback DELETE note
-    ])
+    client._request = MagicMock(
+        side_effect=[
+            [{"gramps_id": "S0001"}],  # count_sources before
+            [{"name": "Blog", "handle": "tagBlog"}],  # _find_tag_handle
+            [
+                {
+                    "_class": "Note",
+                    "type": "add",
+                    "handle": "nH",
+                    "new": {"_class": "Note", "handle": "nH"},
+                }
+            ],  # POST note
+            err,  # POST source fails
+            None,  # rollback DELETE note
+        ]
+    )
 
     with pytest.raises(requests.HTTPError):
         client.create_blog_post("My title", "Body text", author="Max")
 
     delete_calls = [
-        c for c in client._request.call_args_list
-        if c.args[:2] == ("DELETE", "/api/notes/nH")
+        c for c in client._request.call_args_list if c.args[:2] == ("DELETE", "/api/notes/nH")
     ]
     assert delete_calls, "expected a rollback DELETE of the orphaned note"
 
@@ -373,19 +499,26 @@ def test_update_blog_post_rolls_back_note_when_source_put_fails():
     err = requests.HTTPError(response=resp)
     client = make_client("text")
     source = {"gramps_id": "S0002", "handle": "sH", "note_list": []}
-    client._request = MagicMock(side_effect=[
-        [source],                                        # _get_blog_source
-        [{"_class": "Note", "type": "add", "handle": "nNew",
-          "new": {"_class": "Note", "handle": "nNew"}}],  # _create_body_note POST
-        err,                                              # PUT source fails
-        None,                                              # rollback DELETE note
-    ])
+    client._request = MagicMock(
+        side_effect=[
+            [source],  # _get_blog_source
+            [
+                {
+                    "_class": "Note",
+                    "type": "add",
+                    "handle": "nNew",
+                    "new": {"_class": "Note", "handle": "nNew"},
+                }
+            ],  # _create_body_note POST
+            err,  # PUT source fails
+            None,  # rollback DELETE note
+        ]
+    )
 
     with pytest.raises(requests.HTTPError):
         client.update_blog_post("S0002", body="<p>new</p>")
 
     delete_calls = [
-        c for c in client._request.call_args_list
-        if c.args[:2] == ("DELETE", "/api/notes/nNew")
+        c for c in client._request.call_args_list if c.args[:2] == ("DELETE", "/api/notes/nNew")
     ]
     assert delete_calls, "expected a rollback DELETE of the orphaned note"

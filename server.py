@@ -267,6 +267,7 @@ def create_server(client, enable_destructive=None):
         return client.update_blog_post(gramps_id, title, body, author)
 
     if enable_destructive:
+
         @register
         def gramps_delete_person(gramps_id: str, confirm: bool = False) -> dict:
             """Delete a person. DESTRUCTIVE — requires confirm=True.
