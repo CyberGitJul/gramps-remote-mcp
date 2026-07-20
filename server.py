@@ -40,6 +40,11 @@ def create_server(client, enable_destructive=None):
         return client.set_surname(gramps_id, surname, name_type)
 
     @register
+    def gramps_set_first_name(gramps_id: str, first_name: str) -> dict:
+        """Set a person's primary given (first) name. Non-destructive; returns before/after."""
+        return client.set_first_name(gramps_id, first_name)
+
+    @register
     def gramps_set_gender_bulk(items: list[dict]) -> dict:
         """Set gender for many people in one call, under a single count-guard.
 
@@ -66,6 +71,30 @@ def create_server(client, enable_destructive=None):
     def gramps_add_birth_name(gramps_id: str, surname: str, first_name: str | None = None) -> dict:
         """Add a 'Birth Name' alternate name entry with the given surname."""
         return client.add_birth_name(gramps_id, surname, first_name)
+
+    @register
+    def gramps_add_alternate_name(
+        gramps_id: str,
+        surname: str,
+        first_name: str | None = None,
+        name_type: str = "Birth Name",
+    ) -> dict:
+        """Add an alternate name of a given type (e.g. 'Birth Name', 'Married Name').
+
+        Surname content is taken from the argument; other subfields default. Use
+        it to record a maiden or married name alongside the primary name.
+        """
+        return client.add_alternate_name(gramps_id, surname, first_name, name_type)
+
+    @register
+    def gramps_swap_primary_name(gramps_id: str, alt_index: int = 0) -> dict:
+        """Swap a person's primary name with one of their alternate names.
+
+        alt_index selects which alternate (default the first). Use it to promote
+        e.g. a Birth Name to primary and demote the Married Name to an alternate.
+        Errors if there is no alternate name at that index.
+        """
+        return client.swap_primary_name(gramps_id, alt_index)
 
     @register
     def gramps_search_person(query: str, limit: int | None = None) -> list:
@@ -196,7 +225,49 @@ def create_server(client, enable_destructive=None):
         """
         return client.get_relations(gramps_id)
 
+    @register
+    def gramps_create_blog_post(title: str, body: str, author: str | None = None) -> str:
+        """Create a blog post (a Source tagged 'Blog' + a body note). Returns its Gramps ID.
+
+        `body` is stored per the server's GRAMPS_BLOG_BODY_FORMAT: plain text
+        (default) or HTML. Returns the new source gramps_id (e.g. 'S0002').
+        """
+        return client.create_blog_post(title, body, author)
+
+    @register
+    def gramps_list_blog_posts(page: int | None = None, pagesize: int | None = None) -> list:
+        """List blog posts (Sources tagged 'Blog'), newest first.
+
+        Returns [{gramps_id, title, author, change}]. page is 1-based; pagesize
+        caps rows. Omit both to return all posts.
+        """
+        return client.list_blog_posts(page, pagesize)
+
+    @register
+    def gramps_get_blog_post(gramps_id: str) -> dict:
+        """Fetch one blog post by its Source Gramps ID (e.g. 'S0002').
+
+        Returns title, author, change (unix ts), the body as rendered HTML
+        (body_html) and raw string (body_text), and note_gramps_id.
+        """
+        return client.get_blog_post(gramps_id)
+
+    @register
+    def gramps_update_blog_post(
+        gramps_id: str,
+        title: str | None = None,
+        body: str | None = None,
+        author: str | None = None,
+    ) -> dict:
+        """Update a blog post's title, body, and/or author (only what you pass).
+
+        body is stored per the server's GRAMPS_BLOG_BODY_FORMAT and replaces the
+        existing note's text (keeping its type). Returns {gramps_id, updated}.
+        """
+        return client.update_blog_post(gramps_id, title, body, author)
+
     if enable_destructive:
+
         @register
         def gramps_delete_person(gramps_id: str, confirm: bool = False) -> dict:
             """Delete a person. DESTRUCTIVE — requires confirm=True.
@@ -222,6 +293,17 @@ def create_server(client, enable_destructive=None):
             """
             return client.delete_family(family_id, confirm)
 
+        @register
+        def gramps_delete_blog_post(gramps_id: str, confirm: bool = False) -> dict:
+            """Delete a blog post. DESTRUCTIVE — requires confirm=True.
+
+            Removes the Source and cleans up its body note if now orphaned
+            (shared notes are kept); guards that the source count drops by one.
+            Only present when the server was started with
+            GRAMPS_ENABLE_DESTRUCTIVE=1.
+            """
+            return client.delete_blog_post(gramps_id, confirm)
+
     return mcp, tools
 
 
@@ -230,6 +312,7 @@ def main():
         base_url=os.environ["GRAMPS_BASE_URL"],
         username=os.environ["GRAMPS_USERNAME"],
         password=os.environ["GRAMPS_PASSWORD"],
+        blog_body_format=os.environ.get("GRAMPS_BLOG_BODY_FORMAT"),
     )
     mcp, _ = create_server(client)
     mcp.run(transport="stdio")

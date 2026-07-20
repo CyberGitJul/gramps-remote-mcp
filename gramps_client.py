@@ -3,6 +3,8 @@ import unicodedata
 
 import requests
 
+from gramps_blog import BlogMixin
+
 # Tag applied to tentative records; the exact contract that couples add_person
 # (applies it) to confirm_person (removes it). Keep as a single source of truth.
 UNCONFIRMED_TAG = "Unbestätigt"
@@ -125,26 +127,42 @@ def _name_strings(name):
 
 def _gender_mutation(gender):
     """Build a person-mutation that sets gender. Shared by single + bulk writes."""
+
     def mutate(person):
         person["gender"] = gender
+
     return mutate
 
 
 def _surname_mutation(surname, name_type=None):
     """Build a person-mutation that sets the primary surname (+ optional name type)."""
+
     def mutate(person):
         person["primary_name"]["surname_list"][0]["surname"] = surname
         if name_type is not None:
             person["primary_name"]["type"] = name_type
+
     return mutate
 
 
-class GrampsClient:
-    def __init__(self, base_url, username, password):
+def _first_name_mutation(first_name):
+    """Build a person-mutation that sets the primary given (first) name."""
+
+    def mutate(person):
+        person["primary_name"]["first_name"] = first_name
+
+    return mutate
+
+
+class GrampsClient(BlogMixin):
+    def __init__(self, base_url, username, password, blog_body_format=None):
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
         self._access_token = None
+        # Fail-safe (like GRAMPS_ENABLE_DESTRUCTIVE): only the exact string "html"
+        # enables HTML bodies; anything else falls back to safe plain text.
+        self.blog_body_format = "html" if blog_body_format == "html" else "text"
 
     def _login(self):
         resp = requests.post(
@@ -240,12 +258,14 @@ class GrampsClient:
         return self._request("PUT", f"/api/people/{handle}", json_body=obj)
 
     def _snapshot(self, person):
-        return copy.deepcopy({
-            "gender": person.get("gender"),
-            "primary_name": person.get("primary_name"),
-            "alternate_names": person.get("alternate_names"),
-            "tag_list": person.get("tag_list"),
-        })
+        return copy.deepcopy(
+            {
+                "gender": person.get("gender"),
+                "primary_name": person.get("primary_name"),
+                "alternate_names": person.get("alternate_names"),
+                "tag_list": person.get("tag_list"),
+            }
+        )
 
     def _write_person(self, gramps_id, mutate_fn):
         """Fetch, snapshot, mutate, and PUT one person; return before/after.
@@ -265,9 +285,7 @@ class GrampsClient:
         result = self._write_person(gramps_id, mutate_fn)
         count_after = self.count_people()
         if count_after != count_before:
-            raise PersonCountMismatchError(
-                f"Person count changed: {count_before} -> {count_after}"
-            )
+            raise PersonCountMismatchError(f"Person count changed: {count_before} -> {count_after}")
         return result
 
     def _bulk_write(self, items, mutation_for):
@@ -307,6 +325,9 @@ class GrampsClient:
     def set_surname(self, gramps_id, surname, name_type=None):
         return self._guarded_write(gramps_id, _surname_mutation(surname, name_type))
 
+    def set_first_name(self, gramps_id, first_name):
+        return self._guarded_write(gramps_id, _first_name_mutation(first_name))
+
     def set_gender_bulk(self, items):
         return self._bulk_write(items, lambda item: _gender_mutation(item["gender"]))
 
@@ -315,14 +336,14 @@ class GrampsClient:
             items, lambda item: _surname_mutation(item["surname"], item.get("name_type"))
         )
 
-    def add_birth_name(self, gramps_id, surname, first_name=None):
+    def add_alternate_name(self, gramps_id, surname, first_name=None, name_type="Birth Name"):
         def mutate(person):
             primary_name = person["primary_name"]
             primary_surname = primary_name.get("surname_list", [{}])[0]
 
             # Build fresh name record with content fields from primary_name
             # and metadata fields set to Gramps Web API defaults
-            birth_name = {
+            alt_name = {
                 "call": "",
                 "citation_list": [],
                 "date": {
@@ -335,7 +356,9 @@ class GrampsClient:
                 },
                 "display_as": 0,
                 "famnick": "",
-                "first_name": first_name if first_name is not None else primary_name.get("first_name", ""),
+                "first_name": first_name
+                if first_name is not None
+                else primary_name.get("first_name", ""),
                 "group_as": "",
                 "nick": "",
                 "note_list": [],
@@ -344,9 +367,33 @@ class GrampsClient:
                 "suffix": "",
                 "surname_list": [{**primary_surname, "surname": surname}],
                 "title": "",
-                "type": "Birth Name",
+                "type": name_type,
             }
-            person.setdefault("alternate_names", []).append(birth_name)
+            person.setdefault("alternate_names", []).append(alt_name)
+
+        return self._guarded_write(gramps_id, mutate)
+
+    def add_birth_name(self, gramps_id, surname, first_name=None):
+        # Backward-compatible alias: a Birth-Name alternate.
+        return self.add_alternate_name(gramps_id, surname, first_name, name_type="Birth Name")
+
+    def swap_primary_name(self, gramps_id, alt_index=0):
+        """Swap the primary name with an alternate name (default the first).
+
+        The displaced primary becomes that alternate. Non-destructive (PUT);
+        returns before/after. Raises ValueError if there is no alternate name at
+        alt_index (nothing is written).
+        """
+
+        def mutate(person):
+            alts = person.get("alternate_names") or []
+            if alt_index < 0 or alt_index >= len(alts):
+                raise ValueError(f"no alternate name at index {alt_index} to swap")
+            alts = list(alts)
+            primary = person["primary_name"]
+            person["primary_name"] = alts[alt_index]
+            alts[alt_index] = primary
+            person["alternate_names"] = alts
 
         return self._guarded_write(gramps_id, mutate)
 
@@ -703,9 +750,7 @@ class GrampsClient:
                 family = self._get_family_by_handle(fam_handle)
                 for child_ref in family.get("child_ref_list", []):
                     child = self._get_person_by_handle(child_ref["ref"])
-                    children.append(
-                        self._build_descendant_node(child, remaining_depth - 1)
-                    )
+                    children.append(self._build_descendant_node(child, remaining_depth - 1))
         return self._descendant_node(person, children)
 
     def get_descendants(self, gramps_id, grade=1):
@@ -727,9 +772,7 @@ class GrampsClient:
                 for parent_handle in (family.get("father_handle"), family.get("mother_handle")):
                     if parent_handle:
                         parent = self._get_person_by_handle(parent_handle)
-                        parents.append(
-                            self._build_ancestor_node(parent, remaining_depth - 1)
-                        )
+                        parents.append(self._build_ancestor_node(parent, remaining_depth - 1))
         return self._ancestor_node(person, parents)
 
     def get_ancestors(self, gramps_id, grade=1):
@@ -761,30 +804,36 @@ class GrampsClient:
         parent_families = []
         for fam_handle in root.get("parent_family_list", []):
             family = self._get_family_by_handle(fam_handle)
-            parent_families.append({
-                "family_gramps_id": family.get("gramps_id"),
-                "father": self._summary_for_handle(family.get("father_handle")),
-                "mother": self._summary_for_handle(family.get("mother_handle")),
-            })
+            parent_families.append(
+                {
+                    "family_gramps_id": family.get("gramps_id"),
+                    "father": self._summary_for_handle(family.get("father_handle")),
+                    "mother": self._summary_for_handle(family.get("mother_handle")),
+                }
+            )
 
         families = []
         for fam_handle in root.get("family_list", []):
             family = self._get_family_by_handle(fam_handle)
             partner_handle = next(
-                (h for h in (family.get("father_handle"), family.get("mother_handle"))
-                 if h and h != root_handle),
+                (
+                    h
+                    for h in (family.get("father_handle"), family.get("mother_handle"))
+                    if h and h != root_handle
+                ),
                 None,
             )
             partner = self._summary_for_handle(partner_handle)
             children = [
-                self._summary_for_handle(ref["ref"])
-                for ref in family.get("child_ref_list", [])
+                self._summary_for_handle(ref["ref"]) for ref in family.get("child_ref_list", [])
             ]
-            families.append({
-                "family_gramps_id": family.get("gramps_id"),
-                "partner": partner,
-                "children": children,
-            })
+            families.append(
+                {
+                    "family_gramps_id": family.get("gramps_id"),
+                    "partner": partner,
+                    "children": children,
+                }
+            )
 
         return {
             **self._person_summary(root),

@@ -76,7 +76,9 @@ def test_gramps_add_person_calls_client():
 
     result = tools["gramps_add_person"]("John", "Smith", 1, 1795, "estimated", None, "note text")
 
-    client.add_person.assert_called_once_with("John", "Smith", 1, 1795, "estimated", None, "note text")
+    client.add_person.assert_called_once_with(
+        "John", "Smith", 1, 1795, "estimated", None, "note text"
+    )
     assert result == "I0163"
 
 
@@ -116,8 +118,11 @@ def test_gramps_confirm_person_calls_client():
 def test_gramps_get_descendants_calls_client():
     client = MagicMock()
     client.get_descendants.return_value = {
-        "gramps_id": "I0024", "first_name": "John", "surname": "Smith",
-        "gender": 1, "children": [],
+        "gramps_id": "I0024",
+        "first_name": "John",
+        "surname": "Smith",
+        "gender": 1,
+        "children": [],
     }
     _, tools = create_server(client)
 
@@ -125,8 +130,11 @@ def test_gramps_get_descendants_calls_client():
 
     client.get_descendants.assert_called_once_with("I0024", 2)
     assert result == {
-        "gramps_id": "I0024", "first_name": "John", "surname": "Smith",
-        "gender": 1, "children": [],
+        "gramps_id": "I0024",
+        "first_name": "John",
+        "surname": "Smith",
+        "gender": 1,
+        "children": [],
     }
 
 
@@ -176,8 +184,11 @@ def test_gramps_list_people_defaults():
 def test_gramps_set_gender_bulk_calls_client():
     client = MagicMock()
     client.set_gender_bulk.return_value = {
-        "count_before": 2, "count_after": 2, "count_guard_ok": True,
-        "results": [], "errors": [],
+        "count_before": 2,
+        "count_after": 2,
+        "count_guard_ok": True,
+        "results": [],
+        "errors": [],
     }
     _, tools = create_server(client)
 
@@ -191,8 +202,11 @@ def test_gramps_set_gender_bulk_calls_client():
 def test_gramps_set_surname_bulk_calls_client():
     client = MagicMock()
     client.set_surname_bulk.return_value = {
-        "count_before": 1, "count_after": 1, "count_guard_ok": True,
-        "results": [], "errors": [],
+        "count_before": 1,
+        "count_after": 1,
+        "count_guard_ok": True,
+        "results": [],
+        "errors": [],
     }
     _, tools = create_server(client)
 
@@ -206,8 +220,11 @@ def test_gramps_set_surname_bulk_calls_client():
 def test_gramps_get_ancestors_calls_client():
     client = MagicMock()
     client.get_ancestors.return_value = {
-        "gramps_id": "I0031", "first_name": "Josef", "surname": "Prentl",
-        "gender": 1, "parents": [],
+        "gramps_id": "I0031",
+        "first_name": "Josef",
+        "surname": "Prentl",
+        "gender": 1,
+        "parents": [],
     }
     _, tools = create_server(client)
 
@@ -215,8 +232,11 @@ def test_gramps_get_ancestors_calls_client():
 
     client.get_ancestors.assert_called_once_with("I0031", 2)
     assert result == {
-        "gramps_id": "I0031", "first_name": "Josef", "surname": "Prentl",
-        "gender": 1, "parents": [],
+        "gramps_id": "I0031",
+        "first_name": "Josef",
+        "surname": "Prentl",
+        "gender": 1,
+        "parents": [],
     }
 
 
@@ -234,8 +254,12 @@ def test_gramps_get_ancestors_defaults_to_grade1():
 def test_gramps_get_relations_calls_client():
     client = MagicMock()
     client.get_relations.return_value = {
-        "gramps_id": "I0036", "first_name": "Ala", "surname": "Prentl", "gender": 0,
-        "parent_families": [], "families": [],
+        "gramps_id": "I0036",
+        "first_name": "Ala",
+        "surname": "Prentl",
+        "gender": 0,
+        "parent_families": [],
+        "families": [],
     }
     _, tools = create_server(client)
 
@@ -247,10 +271,44 @@ def test_gramps_get_relations_calls_client():
     assert result["families"] == []
 
 
+def test_gramps_create_blog_post_calls_client():
+    client = MagicMock()
+    client.create_blog_post.return_value = "S0002"
+    _, tools = create_server(client)
+
+    result = tools["gramps_create_blog_post"]("My title", "Body", "Max")
+
+    client.create_blog_post.assert_called_once_with("My title", "Body", "Max")
+    assert result == "S0002"
+
+
+def test_gramps_list_blog_posts_calls_client():
+    client = MagicMock()
+    client.list_blog_posts.return_value = [{"gramps_id": "S0002"}]
+    _, tools = create_server(client)
+
+    result = tools["gramps_list_blog_posts"](1, 20)
+
+    client.list_blog_posts.assert_called_once_with(1, 20)
+    assert result == [{"gramps_id": "S0002"}]
+
+
+def test_gramps_list_blog_posts_defaults():
+    client = MagicMock()
+    client.list_blog_posts.return_value = []
+    _, tools = create_server(client)
+
+    tools["gramps_list_blog_posts"]()
+
+    client.list_blog_posts.assert_called_once_with(None, None)
+
+
 def test_gramps_set_family_parent_calls_client():
     client = MagicMock()
     client.set_family_parent.return_value = {
-        "family_id": "F0005", "gramps_id": "I0091", "role": "mother",
+        "family_id": "F0005",
+        "gramps_id": "I0091",
+        "role": "mother",
         "previous_handle": None,
     }
     _, tools = create_server(client)
@@ -278,7 +336,10 @@ def test_gramps_remove_child_from_family_calls_client():
 def test_gramps_delete_person_registered_and_delegates_when_enabled():
     client = MagicMock()
     client.delete_person.return_value = {
-        "gramps_id": "I0091", "deleted": True, "count_before": 2, "count_after": 1,
+        "gramps_id": "I0091",
+        "deleted": True,
+        "count_before": 2,
+        "count_after": 1,
     }
     _, tools = create_server(client, enable_destructive=True)
 
@@ -337,7 +398,10 @@ def test_gramps_delete_person_explicit_arg_normalized_and_beats_env():
 def test_gramps_delete_family_registered_and_delegates_when_enabled():
     client = MagicMock()
     client.delete_family.return_value = {
-        "family_id": "F0031", "deleted": True, "count_before": 2, "count_after": 1,
+        "family_id": "F0031",
+        "deleted": True,
+        "count_before": 2,
+        "count_after": 1,
     }
     _, tools = create_server(client, enable_destructive=True)
 
@@ -354,3 +418,94 @@ def test_gramps_delete_family_hidden_when_disabled():
 
     assert "gramps_delete_family" not in tools
     assert "gramps_get_person" in tools  # non-destructive tools still present
+
+
+# --- gramps_get_blog_post ---
+
+
+def test_gramps_get_blog_post_calls_client():
+    client = MagicMock()
+    client.get_blog_post.return_value = {"gramps_id": "S0002", "title": "T"}
+    _, tools = create_server(client)
+
+    result = tools["gramps_get_blog_post"]("S0002")
+
+    client.get_blog_post.assert_called_once_with("S0002")
+    assert result["gramps_id"] == "S0002"
+
+
+def test_gramps_update_blog_post_calls_client():
+    client = MagicMock()
+    client.update_blog_post.return_value = {"gramps_id": "S0002", "updated": ["title"]}
+    _, tools = create_server(client)
+
+    result = tools["gramps_update_blog_post"]("S0002", "new title")
+
+    client.update_blog_post.assert_called_once_with("S0002", "new title", None, None)
+    assert result["updated"] == ["title"]
+
+
+def test_gramps_delete_blog_post_registered_and_delegates_when_enabled():
+    client = MagicMock()
+    client.delete_blog_post.return_value = {
+        "gramps_id": "S0002",
+        "deleted": True,
+        "count_before": 2,
+        "count_after": 1,
+        "deleted_notes": ["nH"],
+    }
+    _, tools = create_server(client, enable_destructive=True)
+
+    assert "gramps_delete_blog_post" in tools
+    result = tools["gramps_delete_blog_post"]("S0002", True)
+
+    client.delete_blog_post.assert_called_once_with("S0002", True)
+    assert result["deleted"] is True
+
+
+def test_gramps_delete_blog_post_hidden_when_disabled():
+    client = MagicMock()
+    _, tools = create_server(client, enable_destructive=False)
+
+    assert "gramps_delete_blog_post" not in tools
+    assert "gramps_create_blog_post" in tools  # non-destructive blog tools still present
+
+
+def test_gramps_set_first_name_calls_client():
+    client = MagicMock()
+    client.set_first_name.return_value = {"gramps_id": "I0036", "before": {}, "after": {}}
+    _, tools = create_server(client)
+
+    tools["gramps_set_first_name"]("I0036", "Alla")
+
+    client.set_first_name.assert_called_once_with("I0036", "Alla")
+
+
+def test_gramps_add_alternate_name_calls_client():
+    client = MagicMock()
+    client.add_alternate_name.return_value = {"gramps_id": "I0036", "before": {}, "after": {}}
+    _, tools = create_server(client)
+
+    tools["gramps_add_alternate_name"]("I0036", "Werneck", "Alla", "Married Name")
+
+    client.add_alternate_name.assert_called_once_with("I0036", "Werneck", "Alla", "Married Name")
+
+
+def test_gramps_swap_primary_name_calls_client():
+    client = MagicMock()
+    client.swap_primary_name.return_value = {"gramps_id": "I0036", "before": {}, "after": {}}
+    _, tools = create_server(client)
+
+    tools["gramps_swap_primary_name"]("I0036", 0)
+
+    client.swap_primary_name.assert_called_once_with("I0036", 0)
+
+
+def test_gramps_swap_primary_name_defaults_index():
+    client = MagicMock()
+    client.swap_primary_name.return_value = {"gramps_id": "I0036", "before": {}, "after": {}}
+    _, tools = create_server(client)
+
+    tools["gramps_swap_primary_name"]("I0036")
+
+    client.swap_primary_name.assert_called_once_with("I0036", 0)

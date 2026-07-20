@@ -122,6 +122,12 @@ NOTE_HANDLE=$(curl -fsS -X POST "$BASE/notes/" "${AUTH[@]}" -d '{
 * `type` darf als Klartext-String übergeben werden (`"General"`), der Server konvertiert nach
   `{"_class":"NoteType","value":1,"string":""}` ✅.
 * `format`: `0` = *flowed* (Umbrüche werden zu Absätzen), `1` = *formatted* (Whitespace bleibt) 📖.
+* Für eine **HTML-Body-Notiz** (`GRAMPS_BLOG_BODY_FORMAT=html`) ist der zuverlässige Payload das
+  **vollständige** Typ-Objekt `{"_class": "NoteType", "value": 24, "string": ""}` (`24` =
+  `HTML_CODE`, verifiziert gegen Gramps Core `gramps/gen/lib/notetype.py`) 📖. Der Klartext-String
+  ist dabei **case-sensitive** (`"Html code"`, nicht `"HTML code"` o. ä.) und fällt bei falscher
+  Schreibweise **stillschweigend** auf `CUSTOM` zurück statt zu fehlern — deshalb für HTML-Bodies
+  immer das volle Objekt senden, nicht den String.
 
 ### 3.4 Source (= der Blog-Post) anlegen
 
@@ -308,6 +314,32 @@ sondern als Liste von `StyledTextTag`-Objekten mit Zeichen-Ranges:
 LINK=8, STRIKETHROUGH=9, SUBSCRIPT=10`.
 
 Bei `LINK` steht die Ziel-URL in `value`; interne Verweise nutzen `gramps://<Class>/handle/<handle>` 📖.
+
+### 7.1 HTML-Body-Notizen (`NoteType.HTML_CODE`)
+
+Getrennt von den StyledText-Tags oben: Für Blog-Post-Bodies im HTML-Modus
+(`GRAMPS_BLOG_BODY_FORMAT=html`, s. §3.3) wird keine StyledText-Formatierung verwendet, sondern
+die rohe Note vom Typ `HTML_CODE` (`value: 24`) — der Server rendert und saniert deren
+`text.string` beim Lesen mit `formats=html` als HTML.
+
+> ✅ **Bleach-Allow-List (Live-Smoke gegen gramps-web-api 3.17.0, 2026-07-20):** Beim Rendern eines
+> `HTML_CODE`-Bodies mit `formats=html` saniert der Server das HTML und umschließt es mit `<div>`.
+> **Behalten:** Struktur-/Inline-Tags wie `<p>`, `<strong>`, `<a href="…">`. **Gestrippt:** `<script>`
+> (das Tag entfällt, der reine Textinhalt bleibt als Text stehen), `<img>` (komplett entfernt) sowie
+> Event-Handler-Attribute (`onclick`, `onerror`, …). Ein `<script>`/`onerror`-Payload wird also
+> zuverlässig neutralisiert — der HTML-Modus ist gegen die getesteten XSS-Vektoren sicher. Im
+> Text-Modus (General-Note) wird der Body beim Rendern HTML-**escaped** (`<` → `&lt;` usw.), `body_html`
+> ist also nie der rohe String.
+
+> ⚠️ **Der Note-Typ ist bei `create` fixiert (bekannte Limitation).** `update_blog_post` ersetzt nur
+> `text.string` und **behält** den bestehenden Note-Typ (bewusste Design-Entscheidung). Wird
+> `GRAMPS_BLOG_BODY_FORMAT` **nach** dem Anlegen umgestellt und danach ein alter Post-Body aktualisiert,
+> passt der Typ nicht mehr zum Inhalt: ein HTML-Body in einer General-Note wird **escaped/literal**
+> angezeigt (sichtbar falsch, aber kein Datenverlust und kein XSS); ein Text-Body in einer
+> HTML_CODE-Note wird weiterhin korrekt escaped (kein Content-Verlust). **Empfehlung:**
+> `GRAMPS_BLOG_BODY_FORMAT` pro Deployment einmal festlegen und nicht auf einem Baum mit bestehenden
+> Posts umstellen — alte Posts behalten ihr Rendering vom Anlege-Zeitpunkt. (Live-Smoke 2026-07-20
+> bestätigt: Flip text→html rendert escaped-literal, Flip html→text bleibt harmlos.)
 
 **Akzeptierte Payload-Varianten für `name`** (live durchprobiert ✅):
 

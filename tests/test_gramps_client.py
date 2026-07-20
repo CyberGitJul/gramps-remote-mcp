@@ -110,9 +110,7 @@ from gramps_client import PersonCountMismatchError
 @patch("gramps_client.requests.post")
 def test_count_people(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
-    mock_request.return_value = make_response(
-        [{"gramps_id": "I0001"}, {"gramps_id": "I0002"}]
-    )
+    mock_request.return_value = make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0002"}])
     client = GrampsClient("https://example.test", "bot", "secret")
 
     assert client.count_people() == 2
@@ -335,9 +333,7 @@ def test_create_object_raises_if_no_add_item_found(mock_post, mock_request):
 @patch("gramps_client.requests.post")
 def test_count_families(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
-    mock_request.return_value = make_response(
-        [{"gramps_id": "F0001"}, {"gramps_id": "F0002"}]
-    )
+    mock_request.return_value = make_response([{"gramps_id": "F0001"}, {"gramps_id": "F0002"}])
     client = GrampsClient("https://example.test", "bot", "secret")
 
     assert client.count_families() == 2
@@ -354,9 +350,7 @@ def test_count_families(mock_post, mock_request):
 @patch("gramps_client.requests.post")
 def test_get_family_found(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
-    mock_request.return_value = make_response(
-        [{"gramps_id": "F0007", "handle": "famhandle7"}]
-    )
+    mock_request.return_value = make_response([{"gramps_id": "F0007", "handle": "famhandle7"}])
     client = GrampsClient("https://example.test", "bot", "secret")
 
     family = client.get_family("F0007")
@@ -433,9 +427,7 @@ def test_find_tag_handle_not_found_returns_none(mock_post, mock_request):
 @patch("gramps_client.requests.post")
 def test_get_or_create_tag_reuses_existing(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
-    mock_request.return_value = make_response(
-        [{"handle": "taghandle1", "name": "Unbestätigt"}]
-    )
+    mock_request.return_value = make_response([{"handle": "taghandle1", "name": "Unbestätigt"}])
     client = GrampsClient("https://example.test", "bot", "secret")
 
     assert client._get_or_create_tag("Unbestätigt") == "taghandle1"
@@ -541,7 +533,13 @@ def test_search_person_matches_surname(mock_post, mock_request):
 def test_search_person_no_match_returns_empty(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
     mock_request.return_value = make_response(
-        [{"gramps_id": "I0001", "gender": 2, "primary_name": {"first_name": "Emma", "surname_list": []}}]
+        [
+            {
+                "gramps_id": "I0001",
+                "gender": 2,
+                "primary_name": {"first_name": "Emma", "surname_list": []},
+            }
+        ]
     )
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -581,7 +579,13 @@ def test_search_person_matches_true_substring_mid_name(mock_post, mock_request):
 def test_search_person_handles_missing_surname_list(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
     mock_request.return_value = make_response(
-        [{"gramps_id": "I0050", "gender": 0, "primary_name": {"first_name": "Josephine", "surname_list": []}}]
+        [
+            {
+                "gramps_id": "I0050",
+                "gender": 0,
+                "primary_name": {"first_name": "Josephine", "surname_list": []},
+            }
+        ]
     )
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -695,12 +699,21 @@ def test_search_person_limit_caps_results(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
     mock_request.return_value = make_response(
         [
-            {"gramps_id": "I0001", "gender": 1,
-             "primary_name": {"first_name": "Hans", "surname_list": [{"surname": "Prentl"}]}},
-            {"gramps_id": "I0002", "gender": 1,
-             "primary_name": {"first_name": "Josef", "surname_list": [{"surname": "Prentl"}]}},
-            {"gramps_id": "I0003", "gender": 0,
-             "primary_name": {"first_name": "Maria", "surname_list": [{"surname": "Prentl"}]}},
+            {
+                "gramps_id": "I0001",
+                "gender": 1,
+                "primary_name": {"first_name": "Hans", "surname_list": [{"surname": "Prentl"}]},
+            },
+            {
+                "gramps_id": "I0002",
+                "gender": 1,
+                "primary_name": {"first_name": "Josef", "surname_list": [{"surname": "Prentl"}]},
+            },
+            {
+                "gramps_id": "I0003",
+                "gender": 0,
+                "primary_name": {"first_name": "Maria", "surname_list": [{"surname": "Prentl"}]},
+            },
         ]
     )
     client = GrampsClient("https://example.test", "bot", "secret")
@@ -716,10 +729,16 @@ def test_search_person_limit_none_returns_all(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
     mock_request.return_value = make_response(
         [
-            {"gramps_id": "I0001", "gender": 1,
-             "primary_name": {"first_name": "Hans", "surname_list": [{"surname": "Prentl"}]}},
-            {"gramps_id": "I0002", "gender": 1,
-             "primary_name": {"first_name": "Josef", "surname_list": [{"surname": "Prentl"}]}},
+            {
+                "gramps_id": "I0001",
+                "gender": 1,
+                "primary_name": {"first_name": "Hans", "surname_list": [{"surname": "Prentl"}]},
+            },
+            {
+                "gramps_id": "I0002",
+                "gender": 1,
+                "primary_name": {"first_name": "Josef", "surname_list": [{"surname": "Prentl"}]},
+            },
         ]
     )
     client = GrampsClient("https://example.test", "bot", "secret")
@@ -727,7 +746,7 @@ def test_search_person_limit_none_returns_all(mock_post, mock_request):
     assert len(client.search_person("prentl")) == 2  # no limit -> all matches
 
 
-from gramps_client import _build_date, PersonCreateCountMismatchError
+from gramps_client import PersonCreateCountMismatchError, _build_date
 
 
 def test_build_date_exact_defaults_to_none_quality():
@@ -892,14 +911,20 @@ def test_add_person_with_birth_note_and_new_tag(mock_post, mock_request):
 
     note_call = mock_request.call_args_list[2]
     assert note_call.args[1] == "https://example.test/api/notes/"
-    assert note_call.kwargs["json"]["text"]["string"] == "citations/SMITH-001-citations.md, Entry C4"
+    assert (
+        note_call.kwargs["json"]["text"]["string"] == "citations/SMITH-001-citations.md, Entry C4"
+    )
 
     person_call = mock_request.call_args_list[5]
     person_body = person_call.kwargs["json"]
     assert person_body["tag_list"] == ["newtaghandle"]
     assert person_body["note_list"] == ["notehandle1"]
     assert person_body["event_ref_list"] == [
-        {"_class": "EventRef", "ref": "eventhandle1", "role": {"_class": "EventRoleType", "value": 1, "string": ""}}
+        {
+            "_class": "EventRef",
+            "ref": "eventhandle1",
+            "role": {"_class": "EventRoleType", "value": 1, "string": ""},
+        }
     ]
     assert person_body["birth_ref_index"] == 0
 
@@ -977,7 +1002,7 @@ def test_add_person_skips_empty_note(mock_post, mock_request):
     assert person_body["note_list"] == []
 
 
-from gramps_client import _assign_parent_handles, FamilyCreateCountMismatchError
+from gramps_client import FamilyCreateCountMismatchError, _assign_parent_handles
 
 
 def test_assign_parent_handles_male_and_female():
@@ -1251,6 +1276,7 @@ def test_confirm_person_noop_when_tag_does_not_exist_at_all(mock_post, mock_requ
 
 # --- gramps_get_descendants ---
 
+
 def _person(gramps_id, handle, first_name, surname, gender, family_list=None):
     return {
         "gramps_id": gramps_id,
@@ -1270,28 +1296,45 @@ def test_get_descendants_grade1_two_children(mock_post, mock_request):
     child1 = _person("I0031", "h_c1", "Alice", "Smith", 0)
     child2 = _person("I0032", "h_c2", "Bob", "Smith", 1)
     mock_request.side_effect = [
-        make_response([root]),   # get_person(?gramps_id=I0024)
-        make_response(family),   # GET /api/families/f1
-        make_response(child1),   # GET /api/people/h_c1
-        make_response(child2),   # GET /api/people/h_c2
+        make_response([root]),  # get_person(?gramps_id=I0024)
+        make_response(family),  # GET /api/families/f1
+        make_response(child1),  # GET /api/people/h_c1
+        make_response(child2),  # GET /api/people/h_c2
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
     tree = client.get_descendants("I0024", 1)
 
     assert tree == {
-        "gramps_id": "I0024", "first_name": "John", "surname": "Smith",
-        "gender": 1, "children": [
-            {"gramps_id": "I0031", "first_name": "Alice", "surname": "Smith",
-             "gender": 0, "children": []},
-            {"gramps_id": "I0032", "first_name": "Bob", "surname": "Smith",
-             "gender": 1, "children": []},
+        "gramps_id": "I0024",
+        "first_name": "John",
+        "surname": "Smith",
+        "gender": 1,
+        "children": [
+            {
+                "gramps_id": "I0031",
+                "first_name": "Alice",
+                "surname": "Smith",
+                "gender": 0,
+                "children": [],
+            },
+            {
+                "gramps_id": "I0032",
+                "first_name": "Bob",
+                "surname": "Smith",
+                "gender": 1,
+                "children": [],
+            },
         ],
     }
     assert mock_request.call_args_list[1].args[:2] == (
-        "GET", "https://example.test/api/families/f1")
+        "GET",
+        "https://example.test/api/families/f1",
+    )
     assert mock_request.call_args_list[2].args[:2] == (
-        "GET", "https://example.test/api/people/h_c1")
+        "GET",
+        "https://example.test/api/people/h_c1",
+    )
 
 
 @patch("gramps_client.requests.request")
@@ -1304,10 +1347,10 @@ def test_get_descendants_grade2_includes_grandchild_and_stops(mock_post, mock_re
     fam2 = {"child_ref_list": [{"ref": "h_gc1"}]}
     grandchild = _person("I0040", "h_gc1", "Carol", "Clark", 0, ["f3"])
     mock_request.side_effect = [
-        make_response([root]),      # get_person
-        make_response(fam1),        # families/f1
-        make_response(child1),      # people/h_c1
-        make_response(fam2),        # families/f2
+        make_response([root]),  # get_person
+        make_response(fam1),  # families/f1
+        make_response(child1),  # people/h_c1
+        make_response(fam2),  # families/f2
         make_response(grandchild),  # people/h_gc1
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
@@ -1344,8 +1387,11 @@ def test_get_descendants_multiple_families_union(mock_post, mock_request):
     fam2 = {"child_ref_list": [{"ref": "h_c2"}]}
     child2 = _person("I0050", "h_c2", "David", "Smith", 1)
     mock_request.side_effect = [
-        make_response([root]), make_response(fam1), make_response(child1),
-        make_response(fam2), make_response(child2),
+        make_response([root]),
+        make_response(fam1),
+        make_response(child1),
+        make_response(fam2),
+        make_response(child2),
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -1386,8 +1432,13 @@ def test_get_descendants_node_missing_name_fields(mock_post, mock_request):
 
     tree = client.get_descendants("I0099", 1)
 
-    assert tree == {"gramps_id": "I0099", "first_name": "", "surname": "",
-                    "gender": None, "children": []}
+    assert tree == {
+        "gramps_id": "I0099",
+        "first_name": "",
+        "surname": "",
+        "gender": None,
+        "children": [],
+    }
 
 
 @patch("gramps_client.requests.request")
@@ -1400,9 +1451,9 @@ def test_get_descendants_defaults_to_grade1(mock_post, mock_request):
     fam1 = {"child_ref_list": [{"ref": "h_c1"}]}
     child1 = _person("I0031", "h_c1", "Alice", "Smith", 0, ["f2"])  # child has a family f2
     mock_request.side_effect = [
-        make_response([root]),   # get_person
-        make_response(fam1),     # families/f1
-        make_response(child1),   # people/h_c1
+        make_response([root]),  # get_person
+        make_response(fam1),  # families/f1
+        make_response(child1),  # people/h_c1
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -1434,31 +1485,48 @@ def test_get_ancestors_grade1_two_parents(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
     child = _child_person("I0031", "h_child", "Josef", "Prentl", 1, ["f1"])
     fam1 = {"father_handle": "h_ala", "mother_handle": "h_franz"}
-    ala = _child_person("I0036", "h_ala", "Ala", "Prentl", 0)      # female in father slot
+    ala = _child_person("I0036", "h_ala", "Ala", "Prentl", 0)  # female in father slot
     franz = _child_person("I0037", "h_franz", "Franz", "Huber", 1)  # male in mother slot
     mock_request.side_effect = [
-        make_response([child]),   # get_person(?gramps_id=I0031)
-        make_response(fam1),      # GET /api/families/f1
-        make_response(ala),       # GET /api/people/h_ala
-        make_response(franz),     # GET /api/people/h_franz
+        make_response([child]),  # get_person(?gramps_id=I0031)
+        make_response(fam1),  # GET /api/families/f1
+        make_response(ala),  # GET /api/people/h_ala
+        make_response(franz),  # GET /api/people/h_franz
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
     tree = client.get_ancestors("I0031", 1)
 
     assert tree == {
-        "gramps_id": "I0031", "first_name": "Josef", "surname": "Prentl",
-        "gender": 1, "parents": [
-            {"gramps_id": "I0036", "first_name": "Ala", "surname": "Prentl",
-             "gender": 0, "parents": []},
-            {"gramps_id": "I0037", "first_name": "Franz", "surname": "Huber",
-             "gender": 1, "parents": []},
+        "gramps_id": "I0031",
+        "first_name": "Josef",
+        "surname": "Prentl",
+        "gender": 1,
+        "parents": [
+            {
+                "gramps_id": "I0036",
+                "first_name": "Ala",
+                "surname": "Prentl",
+                "gender": 0,
+                "parents": [],
+            },
+            {
+                "gramps_id": "I0037",
+                "first_name": "Franz",
+                "surname": "Huber",
+                "gender": 1,
+                "parents": [],
+            },
         ],
     }
     assert mock_request.call_args_list[1].args[:2] == (
-        "GET", "https://example.test/api/families/f1")
+        "GET",
+        "https://example.test/api/families/f1",
+    )
     assert mock_request.call_args_list[2].args[:2] == (
-        "GET", "https://example.test/api/people/h_ala")
+        "GET",
+        "https://example.test/api/people/h_ala",
+    )
 
 
 @patch("gramps_client.requests.request")
@@ -1491,11 +1559,11 @@ def test_get_ancestors_grade2_includes_grandparent_and_stops(mock_post, mock_req
     fam2 = {"father_handle": "h_opa", "mother_handle": None}
     opa = _child_person("I0040", "h_opa", "Anton", "Prentl", 1, ["f3"])
     mock_request.side_effect = [
-        make_response([child]),   # get_person
-        make_response(fam1),      # families/f1
-        make_response(franz),     # people/h_franz
-        make_response(fam2),      # families/f2
-        make_response(opa),       # people/h_opa
+        make_response([child]),  # get_person
+        make_response(fam1),  # families/f1
+        make_response(franz),  # people/h_franz
+        make_response(fam2),  # families/f2
+        make_response(opa),  # people/h_opa
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -1569,8 +1637,9 @@ def test_get_ancestors_defaults_to_grade1(mock_post, mock_request):
 # --- get_relations (G3) ---
 
 
-def _root_person(gramps_id, handle, first_name, surname, gender,
-                 parent_family_list=None, family_list=None):
+def _root_person(
+    gramps_id, handle, first_name, surname, gender, parent_family_list=None, family_list=None
+):
     return {
         "gramps_id": gramps_id,
         "handle": handle,
@@ -1588,53 +1657,69 @@ def test_get_relations_full_slots_are_bloodline_not_gender(mock_post, mock_reque
     # is MALE in the mother slot. Relations must report the partner as the OTHER
     # slot (regardless of sex) and each person's own gender, never the slot's.
     mock_post.return_value = make_response({"access_token": "tok123"})
-    root = _root_person("I0036", "h_ala", "Ala", "Prentl", 0,
-                        parent_family_list=["f_parent"], family_list=["f_own"])
+    root = _root_person(
+        "I0036", "h_ala", "Ala", "Prentl", 0, parent_family_list=["f_parent"], family_list=["f_own"]
+    )
     f_parent = {"gramps_id": "F_P", "father_handle": "h_opa", "mother_handle": "h_oma"}
     opa = _person("I0100", "h_opa", "Opa", "Prentl", 1)
     oma = _person("I0101", "h_oma", "Oma", "Prentl", 0)
     f_own = {
-        "gramps_id": "F_O", "father_handle": "h_ala", "mother_handle": "h_franz",
+        "gramps_id": "F_O",
+        "father_handle": "h_ala",
+        "mother_handle": "h_franz",
         "child_ref_list": [{"ref": "h_c1"}, {"ref": "h_c2"}],
     }
     franz = _person("I0037", "h_franz", "Franz", "Huber", 1)
     kind1 = _person("I0060", "h_c1", "Kind1", "Prentl", 1)
     kind2 = _person("I0061", "h_c2", "Kind2", "Prentl", 0)
     mock_request.side_effect = [
-        make_response([root]),      # get_person(?gramps_id=I0036)
-        make_response(f_parent),    # families/f_parent
-        make_response(opa),         # people/h_opa (father slot)
-        make_response(oma),         # people/h_oma (mother slot)
-        make_response(f_own),       # families/f_own
-        make_response(franz),       # people/h_franz (partner = other slot)
-        make_response(kind1),       # people/h_c1
-        make_response(kind2),       # people/h_c2
+        make_response([root]),  # get_person(?gramps_id=I0036)
+        make_response(f_parent),  # families/f_parent
+        make_response(opa),  # people/h_opa (father slot)
+        make_response(oma),  # people/h_oma (mother slot)
+        make_response(f_own),  # families/f_own
+        make_response(franz),  # people/h_franz (partner = other slot)
+        make_response(kind1),  # people/h_c1
+        make_response(kind2),  # people/h_c2
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
     rel = client.get_relations("I0036")
 
     assert rel == {
-        "gramps_id": "I0036", "first_name": "Ala", "surname": "Prentl", "gender": 0,
+        "gramps_id": "I0036",
+        "first_name": "Ala",
+        "surname": "Prentl",
+        "gender": 0,
         "parent_families": [
             {
                 "family_gramps_id": "F_P",
-                "father": {"gramps_id": "I0100", "first_name": "Opa",
-                           "surname": "Prentl", "gender": 1},
-                "mother": {"gramps_id": "I0101", "first_name": "Oma",
-                           "surname": "Prentl", "gender": 0},
+                "father": {
+                    "gramps_id": "I0100",
+                    "first_name": "Opa",
+                    "surname": "Prentl",
+                    "gender": 1,
+                },
+                "mother": {
+                    "gramps_id": "I0101",
+                    "first_name": "Oma",
+                    "surname": "Prentl",
+                    "gender": 0,
+                },
             }
         ],
         "families": [
             {
                 "family_gramps_id": "F_O",
-                "partner": {"gramps_id": "I0037", "first_name": "Franz",
-                            "surname": "Huber", "gender": 1},
+                "partner": {
+                    "gramps_id": "I0037",
+                    "first_name": "Franz",
+                    "surname": "Huber",
+                    "gender": 1,
+                },
                 "children": [
-                    {"gramps_id": "I0060", "first_name": "Kind1",
-                     "surname": "Prentl", "gender": 1},
-                    {"gramps_id": "I0061", "first_name": "Kind2",
-                     "surname": "Prentl", "gender": 0},
+                    {"gramps_id": "I0060", "first_name": "Kind1", "surname": "Prentl", "gender": 1},
+                    {"gramps_id": "I0061", "first_name": "Kind2", "surname": "Prentl", "gender": 0},
                 ],
             }
         ],
@@ -1648,14 +1733,16 @@ def test_get_relations_partner_is_the_other_slot_when_root_is_mother(mock_post, 
     mock_post.return_value = make_response({"access_token": "tok123"})
     root = _root_person("I0037", "h_franz", "Franz", "Huber", 1, family_list=["f_own"])
     f_own = {
-        "gramps_id": "F_O", "father_handle": "h_ala", "mother_handle": "h_franz",
+        "gramps_id": "F_O",
+        "father_handle": "h_ala",
+        "mother_handle": "h_franz",
         "child_ref_list": [],
     }
     ala = _person("I0036", "h_ala", "Ala", "Prentl", 0)
     mock_request.side_effect = [
-        make_response([root]),    # get_person
-        make_response(f_own),     # families/f_own
-        make_response(ala),       # people/h_ala (partner = father slot)
+        make_response([root]),  # get_person
+        make_response(f_own),  # families/f_own
+        make_response(ala),  # people/h_ala (partner = father slot)
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -1706,8 +1793,12 @@ def test_get_relations_parent_family_with_single_known_parent(mock_post, mock_re
 def test_get_relations_own_family_without_partner_or_children(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
     root = _root_person("I0036", "h_ala", "Ala", "Prentl", 0, family_list=["f_own"])
-    f_own = {"gramps_id": "F_O", "father_handle": "h_ala", "mother_handle": None,
-             "child_ref_list": []}
+    f_own = {
+        "gramps_id": "F_O",
+        "father_handle": "h_ala",
+        "mother_handle": None,
+        "child_ref_list": [],
+    }
     mock_request.side_effect = [
         make_response([root]),
         make_response(f_own),
@@ -1739,9 +1830,7 @@ def test_get_relations_person_not_found(mock_post, mock_request):
 @patch("gramps_client.requests.post")
 def test_list_people_no_args_fetches_all(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
-    mock_request.return_value = make_response(
-        [{"gramps_id": "I0001"}, {"gramps_id": "I0002"}]
-    )
+    mock_request.return_value = make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0002"}])
     client = GrampsClient("https://example.test", "bot", "secret")
 
     result = client.list_people()
@@ -1858,8 +1947,6 @@ def test_object_counts_returns_object_counts_from_metadata(mock_post, mock_reque
 
 # --- set_gender_bulk / set_surname_bulk (G5) ---
 
-from gramps_client import PersonNotFoundError as _PNF  # noqa: E402  (grouped with G5)
-
 
 def _writable_person(gramps_id, handle, gender=2, surname=""):
     return {
@@ -1879,10 +1966,10 @@ def test_set_gender_bulk_updates_multiple_with_single_count_guard(mock_post, moc
     p2 = _writable_person("I0032", "h2", gender=2)
     mock_request.side_effect = [
         make_response([{"gramps_id": "I0031"}, {"gramps_id": "I0032"}]),  # count before: 2
-        make_response([p1]),   # get_person I0031
-        make_response(None),   # put I0031
-        make_response([p2]),   # get_person I0032
-        make_response(None),   # put I0032
+        make_response([p1]),  # get_person I0031
+        make_response(None),  # put I0031
+        make_response([p2]),  # get_person I0032
+        make_response(None),  # put I0032
         make_response([{"gramps_id": "I0031"}, {"gramps_id": "I0032"}]),  # count after: 2
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
@@ -1914,11 +2001,11 @@ def test_set_gender_bulk_partial_failure_does_not_abort_rest(mock_post, mock_req
     p3 = _writable_person("I0033", "h3")
     mock_request.side_effect = [
         make_response([{"gramps_id": "I0031"}]),  # count before
-        make_response([p1]),    # get I0031 -> ok
-        make_response(None),     # put I0031
-        make_response([]),       # get I0032 -> empty -> PersonNotFoundError
-        make_response([p3]),     # get I0033 -> ok
-        make_response(None),     # put I0033
+        make_response([p1]),  # get I0031 -> ok
+        make_response(None),  # put I0031
+        make_response([]),  # get I0032 -> empty -> PersonNotFoundError
+        make_response([p3]),  # get I0033 -> ok
+        make_response(None),  # put I0033
         make_response([{"gramps_id": "I0031"}]),  # count after
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
@@ -2040,9 +2127,9 @@ def test_set_gender_bulk_item_missing_gramps_id_is_recorded_not_aborting(mock_po
     p1 = _writable_person("I0031", "h1")
     mock_request.side_effect = [
         make_response([{"gramps_id": "I0031"}]),  # count before
-        make_response([p1]),                        # get I0031
-        make_response(None),                        # put I0031
-        make_response([{"gramps_id": "I0031"}]),   # count after (batch NOT aborted)
+        make_response([p1]),  # get I0031
+        make_response(None),  # put I0031
+        make_response([{"gramps_id": "I0031"}]),  # count after (batch NOT aborted)
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -2066,12 +2153,21 @@ def test_search_person_negative_limit_returns_no_results(mock_post, mock_request
     mock_post.return_value = make_response({"access_token": "tok123"})
     mock_request.return_value = make_response(
         [
-            {"gramps_id": "I0001", "gender": 1,
-             "primary_name": {"first_name": "Hans", "surname_list": [{"surname": "Prentl"}]}},
-            {"gramps_id": "I0002", "gender": 1,
-             "primary_name": {"first_name": "Josef", "surname_list": [{"surname": "Prentl"}]}},
-            {"gramps_id": "I0003", "gender": 0,
-             "primary_name": {"first_name": "Maria", "surname_list": [{"surname": "Prentl"}]}},
+            {
+                "gramps_id": "I0001",
+                "gender": 1,
+                "primary_name": {"first_name": "Hans", "surname_list": [{"surname": "Prentl"}]},
+            },
+            {
+                "gramps_id": "I0002",
+                "gender": 1,
+                "primary_name": {"first_name": "Josef", "surname_list": [{"surname": "Prentl"}]},
+            },
+            {
+                "gramps_id": "I0003",
+                "gender": 0,
+                "primary_name": {"first_name": "Maria", "surname_list": [{"surname": "Prentl"}]},
+            },
         ]
     )
     client = GrampsClient("https://example.test", "bot", "secret")
@@ -2095,9 +2191,9 @@ def test_set_family_parent_sets_mother_handle(mock_post, mock_request):
     }
     person = {"gramps_id": "I0091", "handle": "h_tanja", "gender": 0}
     mock_request.side_effect = [
-        make_response([family]),   # get_family
-        make_response([person]),   # get_person
-        make_response(None),       # put family
+        make_response([family]),  # get_family
+        make_response([person]),  # get_person
+        make_response(None),  # put family
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -2151,8 +2247,7 @@ def test_set_family_parent_role_is_explicit_not_gender(mock_post, mock_request):
     # person (gender 0) explicitly placed in the "father" slot must land there
     # verbatim; the tool must NOT reorder by sex the way add_family does.
     mock_post.return_value = make_response({"access_token": "tok123"})
-    family = {"gramps_id": "F0009", "handle": "fh9", "father_handle": None,
-              "mother_handle": None}
+    family = {"gramps_id": "F0009", "handle": "fh9", "father_handle": None, "mother_handle": None}
     female = {"gramps_id": "I0036", "handle": "h_ala", "gender": 0}
     mock_request.side_effect = [
         make_response([family]),
@@ -2164,7 +2259,7 @@ def test_set_family_parent_role_is_explicit_not_gender(mock_post, mock_request):
     client.set_family_parent("F0009", "I0036", "father")
 
     put_body = mock_request.call_args_list[2].kwargs["json"]
-    assert put_body["father_handle"] == "h_ala"   # female in the father slot, as asked
+    assert put_body["father_handle"] == "h_ala"  # female in the father slot, as asked
     assert put_body["mother_handle"] is None
 
 
@@ -2172,18 +2267,24 @@ def test_set_family_parent_role_is_explicit_not_gender(mock_post, mock_request):
 @patch("gramps_client.requests.post")
 def test_set_family_parent_replaces_existing_returns_previous(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
-    family = {"gramps_id": "F0005", "handle": "famhandle5",
-              "father_handle": "h_father", "mother_handle": "h_old_mother"}
+    family = {
+        "gramps_id": "F0005",
+        "handle": "famhandle5",
+        "father_handle": "h_father",
+        "mother_handle": "h_old_mother",
+    }
     person = {"gramps_id": "I0091", "handle": "h_tanja", "gender": 0}
     old_mother = {
-        "gramps_id": "I0050", "handle": "h_old_mother", "gender": 0,
+        "gramps_id": "I0050",
+        "handle": "h_old_mother",
+        "gender": 0,
         "primary_name": {"first_name": "Maria", "surname_list": [{"surname": "Meyer"}]},
     }
     mock_request.side_effect = [
-        make_response([family]),    # get_family
-        make_response([person]),    # get_person (the new mother)
+        make_response([family]),  # get_family
+        make_response([person]),  # get_person (the new mother)
         make_response(old_mother),  # _summary_for_handle -> GET the displaced parent
-        make_response(None),        # put family
+        make_response(None),  # put family
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -2193,7 +2294,10 @@ def test_set_family_parent_replaces_existing_returns_previous(mock_post, mock_re
     assert put_body["mother_handle"] == "h_tanja"
     # the displaced parent is resolved to a consumable gramps_id summary, not a raw handle
     assert result["previous"] == {
-        "gramps_id": "I0050", "first_name": "Maria", "surname": "Meyer", "gender": 0,
+        "gramps_id": "I0050",
+        "first_name": "Maria",
+        "surname": "Meyer",
+        "gender": 0,
     }
 
 
@@ -2203,12 +2307,16 @@ def test_set_family_parent_rejects_same_person_as_both_parents(mock_post, mock_r
     # a family cannot have one person as father AND mother: the person already in the
     # father slot must not be settable into the mother slot -> ValueError, and no PUT.
     mock_post.return_value = make_response({"access_token": "tok123"})
-    family = {"gramps_id": "F0005", "handle": "famhandle5",
-              "father_handle": "h_tanja", "mother_handle": None}
+    family = {
+        "gramps_id": "F0005",
+        "handle": "famhandle5",
+        "father_handle": "h_tanja",
+        "mother_handle": None,
+    }
     person = {"gramps_id": "I0091", "handle": "h_tanja", "gender": 0}
     mock_request.side_effect = [
-        make_response([family]),   # get_family
-        make_response([person]),   # get_person
+        make_response([family]),  # get_family
+        make_response([person]),  # get_person
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -2242,11 +2350,15 @@ def test_set_family_parent_family_not_found_raises(mock_post, mock_request):
 @patch("gramps_client.requests.post")
 def test_set_family_parent_person_not_found_raises(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
-    family = {"gramps_id": "F0005", "handle": "famhandle5",
-              "father_handle": None, "mother_handle": None}
+    family = {
+        "gramps_id": "F0005",
+        "handle": "famhandle5",
+        "father_handle": None,
+        "mother_handle": None,
+    }
     mock_request.side_effect = [
-        make_response([family]),   # get_family ok
-        make_response([]),         # get_person -> empty
+        make_response([family]),  # get_family ok
+        make_response([]),  # get_person -> empty
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -2270,9 +2382,9 @@ def test_remove_child_from_family_removes_ref(mock_post, mock_request):
     }
     child = {"gramps_id": "I0091", "handle": "childhandle1"}
     mock_request.side_effect = [
-        make_response([family]),   # get_family
-        make_response([child]),    # get_person
-        make_response(None),       # put family
+        make_response([family]),  # get_family
+        make_response([child]),  # get_person
+        make_response(None),  # put family
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -2325,8 +2437,8 @@ def test_remove_child_from_family_not_a_child_raises(mock_post, mock_request):
     }
     child = {"gramps_id": "I0091", "handle": "childhandle1"}
     mock_request.side_effect = [
-        make_response([family]),   # get_family
-        make_response([child]),    # get_person
+        make_response([family]),  # get_family
+        make_response([child]),  # get_person
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -2352,8 +2464,8 @@ def test_remove_child_from_family_person_not_found_raises(mock_post, mock_reques
     mock_post.return_value = make_response({"access_token": "tok123"})
     family = {"gramps_id": "F0003", "handle": "famhandle3", "child_ref_list": []}
     mock_request.side_effect = [
-        make_response([family]),   # get_family ok
-        make_response([]),         # get_person -> empty
+        make_response([family]),  # get_family ok
+        make_response([]),  # get_person -> empty
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -2373,7 +2485,7 @@ def test_delete_person_requires_confirm(mock_post, mock_request):
     client = GrampsClient("https://example.test", "bot", "secret")
 
     with pytest.raises(ValueError):
-        client.delete_person("I0091")           # confirm defaults to False
+        client.delete_person("I0091")  # confirm defaults to False
     with pytest.raises(ValueError):
         client.delete_person("I0091", confirm=False)
     mock_request.assert_not_called()
@@ -2385,7 +2497,7 @@ def test_delete_person_deletes_and_guards_count(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
     person = {"gramps_id": "I0091", "handle": "h_tanja"}
     mock_request.side_effect = [
-        make_response([person]),   # get_person
+        make_response([person]),  # get_person
         make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0091"}]),  # count before: 2
         make_response([{"type": "delete", "handle": "h_tanja", "_class": "Person"}]),  # DELETE
         make_response([{"gramps_id": "I0001"}]),  # count after: 1
@@ -2413,7 +2525,7 @@ def test_delete_person_count_mismatch_raises(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
     person = {"gramps_id": "I0091", "handle": "h_tanja"}
     mock_request.side_effect = [
-        make_response([person]),   # get_person
+        make_response([person]),  # get_person
         make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0091"}]),  # before: 2
         make_response([{"type": "delete", "handle": "h_tanja", "_class": "Person"}]),
         make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0091"}]),  # after: still 2!
@@ -2458,7 +2570,7 @@ def test_delete_person_cleans_up_orphaned_note(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
     person = {"gramps_id": "I0649", "handle": "h_p", "note_list": ["h_note1"]}
     mock_request.side_effect = [
-        make_response([person]),   # get_person
+        make_response([person]),  # get_person
         make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0649"}]),  # count before: 2
         make_response([{"type": "delete", "handle": "h_p", "_class": "Person"}]),  # DELETE person
         make_response([{"gramps_id": "I0001"}]),  # count after: 1
@@ -2486,23 +2598,25 @@ def test_delete_person_keeps_shared_note(mock_post, mock_request):
     mock_post.return_value = make_response({"access_token": "tok123"})
     person = {"gramps_id": "I0649", "handle": "h_p", "note_list": ["h_shared"]}
     mock_request.side_effect = [
-        make_response([person]),   # get_person
+        make_response([person]),  # get_person
         make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0649"}]),  # before: 2
         make_response([{"type": "delete", "handle": "h_p", "_class": "Person"}]),  # DELETE person
         make_response([{"gramps_id": "I0001"}]),  # after: 1
-        make_response({"handle": "h_shared", "backlinks": {"family": ["h_fam"]}}),  # still referenced
+        make_response(
+            {"handle": "h_shared", "backlinks": {"family": ["h_fam"]}}
+        ),  # still referenced
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
     result = client.delete_person("I0649", confirm=True)
 
-    assert result["deleted_notes"] == []          # nothing deleted
-    assert mock_request.call_count == 5            # no DELETE issued for the shared note
+    assert result["deleted_notes"] == []  # nothing deleted
+    assert mock_request.call_count == 5  # no DELETE issued for the shared note
 
 
 # --- delete_family (G10, DESTRUCTIVE) ---
 
-from gramps_client import FamilyNotEmptyError, FamilyDeleteCountMismatchError
+from gramps_client import FamilyDeleteCountMismatchError, FamilyNotEmptyError
 
 
 @patch("gramps_client.requests.request")
@@ -2512,7 +2626,7 @@ def test_delete_family_requires_confirm(mock_post, mock_request):
     client = GrampsClient("https://example.test", "bot", "secret")
 
     with pytest.raises(ValueError):
-        client.delete_family("F0031")            # confirm defaults to False
+        client.delete_family("F0031")  # confirm defaults to False
     with pytest.raises(ValueError):
         client.delete_family("F0031", confirm=False)
     mock_request.assert_not_called()
@@ -2523,10 +2637,15 @@ def test_delete_family_requires_confirm(mock_post, mock_request):
 def test_delete_family_deletes_childless_and_guards_count(mock_post, mock_request):
     # a partnered but childless (orphaned) family is deletable; parents are fine
     mock_post.return_value = make_response({"access_token": "tok123"})
-    family = {"gramps_id": "F0031", "handle": "fh31",
-              "father_handle": "h_dad", "mother_handle": None, "child_ref_list": []}
+    family = {
+        "gramps_id": "F0031",
+        "handle": "fh31",
+        "father_handle": "h_dad",
+        "mother_handle": None,
+        "child_ref_list": [],
+    }
     mock_request.side_effect = [
-        make_response([family]),   # get_family
+        make_response([family]),  # get_family
         make_response([{"gramps_id": "F0001"}, {"gramps_id": "F0031"}]),  # count before: 2
         make_response([{"type": "delete", "handle": "fh31", "_class": "Family"}]),  # DELETE
         make_response([{"gramps_id": "F0001"}]),  # count after: 1
@@ -2539,7 +2658,10 @@ def test_delete_family_deletes_childless_and_guards_count(mock_post, mock_reques
     assert delete_call.args[0] == "DELETE"
     assert delete_call.args[1] == "https://example.test/api/families/fh31"
     assert result == {
-        "family_id": "F0031", "deleted": True, "count_before": 2, "count_after": 1,
+        "family_id": "F0031",
+        "deleted": True,
+        "count_before": 2,
+        "count_after": 1,
     }
 
 
@@ -2548,10 +2670,13 @@ def test_delete_family_deletes_childless_and_guards_count(mock_post, mock_reques
 def test_delete_family_refuses_when_children_remain(mock_post, mock_request):
     # never silently orphan children: a family that still has kids must not be deleted
     mock_post.return_value = make_response({"access_token": "tok123"})
-    family = {"gramps_id": "F0031", "handle": "fh31",
-              "child_ref_list": [{"_class": "ChildRef", "ref": "h_kid"}]}
+    family = {
+        "gramps_id": "F0031",
+        "handle": "fh31",
+        "child_ref_list": [{"_class": "ChildRef", "ref": "h_kid"}],
+    }
     mock_request.side_effect = [
-        make_response([family]),   # get_family
+        make_response([family]),  # get_family
     ]
     client = GrampsClient("https://example.test", "bot", "secret")
 
@@ -2587,3 +2712,173 @@ def test_delete_family_not_found_raises(mock_post, mock_request):
 
     with pytest.raises(FamilyNotFoundError):
         client.delete_family("F9999", confirm=True)
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("html", "html"),
+        ("text", "text"),
+        ("0", "text"),
+        (None, "text"),
+        ("HTML", "text"),
+        ("garbage", "text"),
+    ],
+)
+def test_blog_body_format_normalized_failsafe(raw, expected):
+    client = GrampsClient("https://example.test", "bot", "secret", blog_body_format=raw)
+    assert client.blog_body_format == expected
+
+
+def test_blog_body_format_defaults_to_text():
+    client = GrampsClient("https://example.test", "bot", "secret")
+    assert client.blog_body_format == "text"
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_set_first_name_updates_primary(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {
+        "gramps_id": "I0036",
+        "handle": "xyz789",
+        "gender": 0,
+        "primary_name": {"first_name": "Ala", "surname_list": [{"surname": "Werneck"}]},
+        "alternate_names": [],
+    }
+    mock_request.side_effect = [
+        make_response([{"gramps_id": "I0036"}]),  # count before
+        make_response([person]),  # get_person
+        make_response(None),  # put
+        make_response([{"gramps_id": "I0036"}]),  # count after
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.set_first_name("I0036", "Alla")
+
+    put_body = mock_request.call_args_list[2].kwargs["json"]
+    assert put_body["primary_name"]["first_name"] == "Alla"
+    assert put_body["primary_name"]["surname_list"][0]["surname"] == "Werneck"  # preserved
+    assert result["before"]["primary_name"]["first_name"] == "Ala"
+    assert result["after"]["primary_name"]["first_name"] == "Alla"
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_add_alternate_name_uses_given_type(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {
+        "gramps_id": "I0036",
+        "handle": "xyz789",
+        "gender": 0,
+        "primary_name": {
+            "first_name": "Alla",
+            "surname_list": [{"surname": "Prentl", "primary": True}],
+        },
+        "alternate_names": [],
+    }
+    mock_request.side_effect = [
+        make_response([{"gramps_id": "I0036"}]),
+        make_response([person]),
+        make_response(None),
+        make_response([{"gramps_id": "I0036"}]),
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    client.add_alternate_name("I0036", "Werneck", name_type="Married Name")
+
+    alt = mock_request.call_args_list[2].kwargs["json"]["alternate_names"][0]
+    assert alt["surname_list"][0]["surname"] == "Werneck"
+    assert alt["type"] == "Married Name"
+    assert alt["first_name"] == "Alla"  # carried from primary
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_swap_primary_name_swaps_with_alt(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {
+        "gramps_id": "I0036",
+        "handle": "xyz789",
+        "gender": 0,
+        "primary_name": {
+            "first_name": "Alla",
+            "type": "Married Name",
+            "surname_list": [{"surname": "Werneck", "primary": True}],
+        },
+        "alternate_names": [
+            {
+                "first_name": "Alla",
+                "type": "Birth Name",
+                "surname_list": [{"surname": "Prentl", "primary": True}],
+            }
+        ],
+    }
+    mock_request.side_effect = [
+        make_response([{"gramps_id": "I0036"}]),
+        make_response([person]),
+        make_response(None),
+        make_response([{"gramps_id": "I0036"}]),
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.swap_primary_name("I0036")
+
+    put_body = mock_request.call_args_list[2].kwargs["json"]
+    assert put_body["primary_name"]["type"] == "Birth Name"
+    assert put_body["primary_name"]["surname_list"][0]["surname"] == "Prentl"
+    assert put_body["alternate_names"][0]["type"] == "Married Name"
+    assert put_body["alternate_names"][0]["surname_list"][0]["surname"] == "Werneck"
+    assert result["after"]["primary_name"]["type"] == "Birth Name"
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_swap_primary_name_out_of_range_raises_without_write(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {
+        "gramps_id": "I0036",
+        "handle": "xyz789",
+        "gender": 0,
+        "primary_name": {"first_name": "A", "surname_list": [{"surname": "B"}]},
+        "alternate_names": [],
+    }
+    mock_request.side_effect = [
+        make_response([{"gramps_id": "I0036"}]),  # count before
+        make_response([person]),  # get_person
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(ValueError):
+        client.swap_primary_name("I0036")
+    # only count + get were issued; no PUT
+    assert all(c.args[0] != "PUT" for c in mock_request.call_args_list)
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_swap_primary_name_negative_index_raises_without_write(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {
+        "gramps_id": "I0036",
+        "handle": "xyz789",
+        "gender": 0,
+        "primary_name": {"first_name": "A", "surname_list": [{"surname": "B"}]},
+        "alternate_names": [
+            {
+                "first_name": "Alla",
+                "type": "Birth Name",
+                "surname_list": [{"surname": "Prentl", "primary": True}],
+            }
+        ],
+    }
+    mock_request.side_effect = [
+        make_response([{"gramps_id": "I0036"}]),  # count before
+        make_response([person]),  # get_person
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(ValueError):
+        client.swap_primary_name("I0036", alt_index=-1)
+    # only count + get were issued; no PUT
+    assert all(c.args[0] != "PUT" for c in mock_request.call_args_list)
