@@ -1,0 +1,24 @@
+# Install once per clone:  pre-commit install --hook-type pre-commit --hook-type pre-push
+# (default_install_hook_types below makes a bare `pre-commit install` do the same.)
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.22
+    hooks:
+      # On commit: auto-fix lint issues and format the changed files.
+      - id: ruff-check
+        name: ruff check (auto-fix)
+        args: [--fix]
+        stages: [pre-commit]
+      - id: ruff-format
+        name: ruff format
+        stages: [pre-commit]
+      # On push: verify only — block the push if anything is unclean, never modify.
+      - id: ruff-check
+        name: ruff check (push gate)
+        stages: [pre-push]
+      - id: ruff-format
+        name: ruff format --check (push gate)
+        args: [--check]
+        stages: [pre-push]
