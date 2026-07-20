@@ -727,7 +727,7 @@ def test_search_person_limit_none_returns_all(mock_post, mock_request):
     assert len(client.search_person("prentl")) == 2  # no limit -> all matches
 
 
-from gramps_client import _build_date, PersonCreateCountMismatchError
+from gramps_client import PersonCreateCountMismatchError, _build_date
 
 
 def test_build_date_exact_defaults_to_none_quality():
@@ -977,7 +977,7 @@ def test_add_person_skips_empty_note(mock_post, mock_request):
     assert person_body["note_list"] == []
 
 
-from gramps_client import _assign_parent_handles, FamilyCreateCountMismatchError
+from gramps_client import FamilyCreateCountMismatchError, _assign_parent_handles
 
 
 def test_assign_parent_handles_male_and_female():
@@ -1858,7 +1858,6 @@ def test_object_counts_returns_object_counts_from_metadata(mock_post, mock_reque
 
 # --- set_gender_bulk / set_surname_bulk (G5) ---
 
-from gramps_client import PersonNotFoundError as _PNF  # noqa: E402  (grouped with G5)
 
 
 def _writable_person(gramps_id, handle, gender=2, surname=""):
@@ -2502,7 +2501,7 @@ def test_delete_person_keeps_shared_note(mock_post, mock_request):
 
 # --- delete_family (G10, DESTRUCTIVE) ---
 
-from gramps_client import FamilyNotEmptyError, FamilyDeleteCountMismatchError
+from gramps_client import FamilyDeleteCountMismatchError, FamilyNotEmptyError
 
 
 @patch("gramps_client.requests.request")
