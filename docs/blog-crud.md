@@ -322,9 +322,24 @@ Getrennt von den StyledText-Tags oben: Für Blog-Post-Bodies im HTML-Modus
 die rohe Note vom Typ `HTML_CODE` (`value: 24`) — der Server rendert und saniert deren
 `text.string` beim Lesen mit `formats=html` als HTML.
 
-> ⏳ **Offen (Task 12 / Live-Smoke):** Die genaue **Bleach-Allow-List** (erlaubte Tags/Attribute),
-> die der Server beim Rendern/Sanitizing eines `HTML_CODE`-Bodies anwendet, ist noch **nicht**
-> bestätigt — wird beim Live-Smoke gegen eine echte Instanz verifiziert und hier nachgetragen.
+> ✅ **Bleach-Allow-List (Live-Smoke gegen gramps-web-api 3.17.0, 2026-07-20):** Beim Rendern eines
+> `HTML_CODE`-Bodies mit `formats=html` saniert der Server das HTML und umschließt es mit `<div>`.
+> **Behalten:** Struktur-/Inline-Tags wie `<p>`, `<strong>`, `<a href="…">`. **Gestrippt:** `<script>`
+> (das Tag entfällt, der reine Textinhalt bleibt als Text stehen), `<img>` (komplett entfernt) sowie
+> Event-Handler-Attribute (`onclick`, `onerror`, …). Ein `<script>`/`onerror`-Payload wird also
+> zuverlässig neutralisiert — der HTML-Modus ist gegen die getesteten XSS-Vektoren sicher. Im
+> Text-Modus (General-Note) wird der Body beim Rendern HTML-**escaped** (`<` → `&lt;` usw.), `body_html`
+> ist also nie der rohe String.
+
+> ⚠️ **Der Note-Typ ist bei `create` fixiert (bekannte Limitation).** `update_blog_post` ersetzt nur
+> `text.string` und **behält** den bestehenden Note-Typ (bewusste Design-Entscheidung). Wird
+> `GRAMPS_BLOG_BODY_FORMAT` **nach** dem Anlegen umgestellt und danach ein alter Post-Body aktualisiert,
+> passt der Typ nicht mehr zum Inhalt: ein HTML-Body in einer General-Note wird **escaped/literal**
+> angezeigt (sichtbar falsch, aber kein Datenverlust und kein XSS); ein Text-Body in einer
+> HTML_CODE-Note wird weiterhin korrekt escaped (kein Content-Verlust). **Empfehlung:**
+> `GRAMPS_BLOG_BODY_FORMAT` pro Deployment einmal festlegen und nicht auf einem Baum mit bestehenden
+> Posts umstellen — alte Posts behalten ihr Rendering vom Anlege-Zeitpunkt. (Live-Smoke 2026-07-20
+> bestätigt: Flip text→html rendert escaped-literal, Flip html→text bleibt harmlos.)
 
 **Akzeptierte Payload-Varianten für `name`** (live durchprobiert ✅):
 

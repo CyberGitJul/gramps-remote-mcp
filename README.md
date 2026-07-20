@@ -54,6 +54,9 @@ A blog post is a `Source` object tagged `Blog`, with its body text stored in the
 first note — not a dedicated blog record (see [`docs/blog-crud.md`](docs/blog-crud.md) for
 the full data model). The body's storage format is controlled by `GRAMPS_BLOG_BODY_FORMAT`:
 plain text by default, or HTML (rendered and sanitized server-side) when set to `html`.
+A post's body-note type is fixed when the post is created, so set `GRAMPS_BLOG_BODY_FORMAT` once
+per deployment: flipping it on a tree that already has posts leaves those posts rendering in their
+original format (a later HTML update to a text-mode post shows up escaped — visible but harmless).
 Deleting a blog post (`gramps_delete_blog_post`) is destructive and only available when the
 destructive-tools gate is on — see [Destructive tools](#destructive-tools).
 
