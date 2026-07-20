@@ -331,6 +331,29 @@ die rohe Note vom Typ `HTML_CODE` (`value: 24`) — der Server rendert und sanie
 > Text-Modus (General-Note) wird der Body beim Rendern HTML-**escaped** (`<` → `&lt;` usw.), `body_html`
 > ist also nie der rohe String.
 
+> ✅ **Vollständige Sanitizer-Allow-List (quell-verifiziert, gramps-web-api `v3.17.0`,
+> `gramps_webapi/api/html.py`).** `HTML_CODE`-Bodies werden mit `bleach.clean(strip=True)` gegen diese
+> Whitelist saniert:
+>
+> ```text
+> ALLOWED_TAGS       = a, abbr, acronym, b, blockquote, code, em, i, li, ol,
+>                      strong, ul, span, p, br, div, s, del
+> ALLOWED_ATTRIBUTES = a:[href,title,style]  abbr/acronym:[title,style]  p/div/span:[style]
+> ALLOWED_CSS        = color, background-color, font-family, font-weight,
+>                      font-size, font-style, text-decoration
+> ```
+>
+> Es rendern also u. a. `<b>`/`<i>`/`<strong>`/`<em>`, `<ul>/<ol>/<li>`, `<p>`, `<a href>`, `<blockquote>`,
+> `<code>`, `<span style>`, `<br>`, `<s>/<del>`. **Gestrippt** (Tag weg, Text bleibt): u. a. `<u>`, `<img>`,
+> `<table>`, sowie `class`/`id`-Attribute. Für **Unterstreichen** gibt es kein `<u>` — stattdessen
+> `<span style="text-decoration:underline">…</span>` (`text-decoration` ist erlaubte CSS-Property; identisch zu
+> Gramps Core `HtmlBackend` `STYLETAG_MARKUP[UNDERLINE]`).
+
+> ⚠️ **Nur der geöffnete Post rendert HTML; die Blog-Listen-/Vorschaukarte zeigt die Tags literal.** Das ist
+> eine Upstream-gramps-web-Limitation (die Listenansicht holt die Note ohne `formats=html` und bindet den rohen
+> `text.string` escaped) — kein Authoring-Trick behebt das. Getrackt in gramps-web #1308:
+> <https://github.com/gramps-project/gramps-web/issues/1308>.
+
 > ⚠️ **Der Note-Typ ist bei `create` fixiert (bekannte Limitation).** `update_blog_post` ersetzt nur
 > `text.string` und **behält** den bestehenden Note-Typ (bewusste Design-Entscheidung). Wird
 > `GRAMPS_BLOG_BODY_FORMAT` **nach** dem Anlegen umgestellt und danach ein alter Post-Body aktualisiert,
