@@ -2702,3 +2702,25 @@ def test_swap_primary_name_out_of_range_raises_without_write(mock_post, mock_req
         client.swap_primary_name("I0036")
     # only count + get were issued; no PUT
     assert all(c.args[0] != "PUT" for c in mock_request.call_args_list)
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_swap_primary_name_negative_index_raises_without_write(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {"gramps_id": "I0036", "handle": "xyz789", "gender": 0,
+              "primary_name": {"first_name": "A", "surname_list": [{"surname": "B"}]},
+              "alternate_names": [
+                  {"first_name": "Alla", "type": "Birth Name",
+                   "surname_list": [{"surname": "Prentl", "primary": True}]}
+              ]}
+    mock_request.side_effect = [
+        make_response([{"gramps_id": "I0036"}]),  # count before
+        make_response([person]),                  # get_person
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(ValueError):
+        client.swap_primary_name("I0036", alt_index=-1)
+    # only count + get were issued; no PUT
+    assert all(c.args[0] != "PUT" for c in mock_request.call_args_list)
