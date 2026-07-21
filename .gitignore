@@ -22,3 +22,6 @@ venv/
 PROGRESS.md
 HANDOFF-*.md
 docs/Progress_archive.md
+
+# Claude Code local settings (personal, not committed)
+.claude/settings.local.json
