@@ -1,6 +1,8 @@
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from server import create_server
 
 
@@ -509,3 +511,41 @@ def test_gramps_swap_primary_name_defaults_index():
     tools["gramps_swap_primary_name"]("I0036")
 
     client.swap_primary_name.assert_called_once_with("I0036", 0)
+
+
+def test_gramps_export_tree_writes_file_and_returns_summary(tmp_path):
+    client = MagicMock()
+    client.export_tree.return_value = b"GRAMPSDATA"
+    client.object_counts.return_value = {"people": 10}
+    _, tools = create_server(client, backup_dir=str(tmp_path))
+
+    result = tools["gramps_export_tree"]("backup.gramps")
+
+    client.export_tree.assert_called_once_with("gramps")
+    assert result["path"] == os.path.realpath(os.path.join(str(tmp_path), "backup.gramps"))
+    assert result["bytes"] == len(b"GRAMPSDATA")
+    assert result["counts"] == {"people": 10}
+    with open(result["path"], "rb") as f:
+        assert f.read() == b"GRAMPSDATA"
+
+
+def test_gramps_import_file_delegates(tmp_path):
+    src = tmp_path / "restore.gramps"
+    src.write_bytes(b"RESTOREDATA")
+    client = MagicMock()
+    client.import_file.return_value = {"before": {}, "after": {}, "added": {}}
+    _, tools = create_server(client, backup_dir=str(tmp_path))
+
+    result = tools["gramps_import_file"]("restore.gramps")
+
+    client.import_file.assert_called_once_with(b"RESTOREDATA", "gramps")
+    assert result == {"before": {}, "after": {}, "added": {}}
+
+
+def test_gramps_export_tree_without_backup_dir_errors(monkeypatch):
+    monkeypatch.delenv("GRAMPS_BACKUP_DIR", raising=False)
+    client = MagicMock()
+    _, tools = create_server(client)
+
+    with pytest.raises(RuntimeError):
+        tools["gramps_export_tree"]()

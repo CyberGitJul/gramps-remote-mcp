@@ -2882,3 +2882,129 @@ def test_swap_primary_name_negative_index_raises_without_write(mock_post, mock_r
         client.swap_primary_name("I0036", alt_index=-1)
     # only count + get were issued; no PUT
     assert all(c.args[0] != "PUT" for c in mock_request.call_args_list)
+
+
+from gramps_client import EXPORT_TIMEOUT, IMPORT_HTTP_TIMEOUT
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_export_tree_returns_raw_bytes(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok"})
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.content = b"\x1f\x8bGRAMPS"
+    resp.raise_for_status.return_value = None
+    mock_request.return_value = resp
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    data = client.export_tree()
+
+    assert data == b"\x1f\x8bGRAMPS"
+    mock_request.assert_called_once_with(
+        "GET",
+        "https://example.test/api/exporters/gramps/file",
+        headers={"Authorization": "Bearer tok"},
+        timeout=EXPORT_TIMEOUT,
+    )
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_raw_post_bytes_sends_octet_stream(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok"})
+    mock_request.return_value = make_response({"task": {"id": "t1"}}, 202)
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    status, body = client._raw_post_bytes("/api/importers/gramps/file", b"DATA")
+
+    assert status == 202
+    assert body == {"task": {"id": "t1"}}
+    mock_request.assert_called_once_with(
+        "POST",
+        "https://example.test/api/importers/gramps/file",
+        data=b"DATA",
+        headers={"Authorization": "Bearer tok", "Content-Type": "application/octet-stream"},
+        timeout=IMPORT_HTTP_TIMEOUT,
+    )
+
+
+from gramps_client import ImportTimeoutError
+
+
+def _metadata(counts):
+    return make_response({"object_counts": counts})
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_import_file_polls_counts_until_stable(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok"})
+    before = {"people": 10, "families": 4}
+    after = {"people": 12, "families": 5}
+    mock_request.side_effect = [
+        _metadata(before),  # before counts
+        make_response({"task": {"id": "t1"}}, 202),  # import POST (async 202)
+        _metadata(after),  # poll 1 (first sighting)
+        _metadata(after),  # poll 2 (confirm)
+        _metadata(after),  # poll 3 (stable -> done)
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.import_file(b"DATA", stability_window=2, poll_interval=0, _sleep=lambda s: None)
+
+    assert result["before"] == before
+    assert result["after"] == after
+    assert result["added"] == {"people": 2, "families": 1}
+    # POST went to the importers endpoint with the raw bytes...
+    post_call = mock_request.call_args_list[1]
+    assert post_call.args[0] == "POST"
+    assert post_call.args[1] == "https://example.test/api/importers/gramps/file"
+    assert post_call.kwargs["data"] == b"DATA"
+    # ...and completion was NEVER derived from /api/tasks/
+    assert all("/api/tasks/" not in call.args[1] for call in mock_request.call_args_list)
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_import_file_handles_sync_201(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok"})
+    before = {"people": 10}
+    after = {"people": 11}
+    mock_request.side_effect = [
+        _metadata(before),  # before
+        make_response(None, 201),  # sync import, empty body
+        _metadata(after),  # poll 1
+        _metadata(after),  # poll 2
+        _metadata(after),  # poll 3 -> stable
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.import_file(b"DATA", stability_window=2, poll_interval=0, _sleep=lambda s: None)
+
+    assert result["added"] == {"people": 1}
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_import_file_timeout_raises(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok"})
+    before = {"people": 10}
+    mock_request.side_effect = [
+        _metadata(before),  # before
+        make_response(None, 201),  # import
+        _metadata(before),  # poll: no growth
+        _metadata(before),
+        _metadata(before),
+    ]
+    clock = iter([0.0, 0.0, 1.0, 2.0, 999.0])
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(ImportTimeoutError):
+        client.import_file(
+            b"DATA",
+            max_timeout=10,
+            poll_interval=0,
+            _sleep=lambda s: None,
+            _now=lambda: next(clock),
+        )

@@ -1,4 +1,5 @@
 import copy
+import time
 import unicodedata
 
 import requests
@@ -48,6 +49,17 @@ class FamilyNotEmptyError(Exception):
 
 class FamilyDeleteCountMismatchError(Exception):
     pass
+
+
+class ImportTimeoutError(Exception):
+    pass
+
+
+EXPORT_TIMEOUT = 300
+IMPORT_HTTP_TIMEOUT = 300
+IMPORT_POLL_INTERVAL = 2.0
+IMPORT_STABILITY_WINDOW = 2
+IMPORT_MAX_TIMEOUT = 300
 
 
 _DATE_MODIFIERS = {
@@ -188,6 +200,100 @@ class GrampsClient(BlogMixin):
             )
         resp.raise_for_status()
         return resp.json() if resp.content else None
+
+    def _raw_get_bytes(self, path):
+        """GET raw bytes (binary download), mirroring _request's 401-relogin retry."""
+        if self._access_token is None:
+            self._login()
+        headers = {"Authorization": f"Bearer {self._access_token}"}
+        resp = requests.request(
+            "GET", f"{self.base_url}{path}", headers=headers, timeout=EXPORT_TIMEOUT
+        )
+        if resp.status_code == 401:
+            self._login()
+            headers = {"Authorization": f"Bearer {self._access_token}"}
+            resp = requests.request(
+                "GET", f"{self.base_url}{path}", headers=headers, timeout=EXPORT_TIMEOUT
+            )
+        resp.raise_for_status()
+        return resp.content
+
+    def _raw_post_bytes(self, path, data):
+        """POST a raw octet-stream body; returns (status_code, json-or-None). 201 and 202 both ok."""
+        if self._access_token is None:
+            self._login()
+        headers = {
+            "Authorization": f"Bearer {self._access_token}",
+            "Content-Type": "application/octet-stream",
+        }
+        resp = requests.request(
+            "POST",
+            f"{self.base_url}{path}",
+            data=data,
+            headers=headers,
+            timeout=IMPORT_HTTP_TIMEOUT,
+        )
+        if resp.status_code == 401:
+            self._login()
+            headers["Authorization"] = f"Bearer {self._access_token}"
+            resp = requests.request(
+                "POST",
+                f"{self.base_url}{path}",
+                data=data,
+                headers=headers,
+                timeout=IMPORT_HTTP_TIMEOUT,
+            )
+        resp.raise_for_status()
+        return resp.status_code, (resp.json() if resp.content else None)
+
+    def export_tree(self, extension="gramps"):
+        """Download the whole tree as raw (gzip) bytes. GET /api/exporters/{ext}/file (synchronous)."""
+        return self._raw_get_bytes(f"/api/exporters/{extension}/file")
+
+    def import_file(
+        self,
+        data,
+        extension="gramps",
+        *,
+        poll_interval=IMPORT_POLL_INTERVAL,
+        stability_window=IMPORT_STABILITY_WINDOW,
+        max_timeout=IMPORT_MAX_TIMEOUT,
+        _sleep=time.sleep,
+        _now=time.monotonic,
+    ):
+        """Import a file into the tree (additive). POST octet-stream, confirm via object_counts.
+
+        Completion is detected from object_counts (GET /api/metadata/), never from
+        /api/tasks/ (unreliable: TTL-reaped). Done once the total count has grown
+        beyond `before` AND the counts are identical for `stability_window`
+        consecutive confirmation polls. Works for sync (201) and async (202) alike.
+        """
+        before = self.object_counts()
+        before_total = sum(before.values())
+        self._raw_post_bytes(f"/api/importers/{extension}/file", data)
+
+        deadline = _now() + max_timeout
+        prev = None
+        stable = 0
+        last = before
+        while _now() < deadline:
+            _sleep(poll_interval)
+            cur = self.object_counts()
+            last = cur
+            if cur == prev:
+                stable += 1
+            else:
+                stable = 0
+                prev = cur
+            if sum(cur.values()) > before_total and stable >= stability_window:
+                return {
+                    "before": before,
+                    "after": cur,
+                    "added": {k: cur.get(k, 0) - before.get(k, 0) for k in cur},
+                }
+        raise ImportTimeoutError(
+            f"Import did not stabilize within {max_timeout}s; before={before}, last={last}"
+        )
 
     def get_person(self, gramps_id):
         # The live API 404s on an unknown gramps_id rather than returning an empty
