@@ -2882,3 +2882,48 @@ def test_swap_primary_name_negative_index_raises_without_write(mock_post, mock_r
         client.swap_primary_name("I0036", alt_index=-1)
     # only count + get were issued; no PUT
     assert all(c.args[0] != "PUT" for c in mock_request.call_args_list)
+
+
+from gramps_client import EXPORT_TIMEOUT, IMPORT_HTTP_TIMEOUT
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_export_tree_returns_raw_bytes(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok"})
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.content = b"\x1f\x8bGRAMPS"
+    resp.raise_for_status.return_value = None
+    mock_request.return_value = resp
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    data = client.export_tree()
+
+    assert data == b"\x1f\x8bGRAMPS"
+    mock_request.assert_called_once_with(
+        "GET",
+        "https://example.test/api/exporters/gramps/file",
+        headers={"Authorization": "Bearer tok"},
+        timeout=EXPORT_TIMEOUT,
+    )
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_raw_post_bytes_sends_octet_stream(mock_post, mock_request):
+    mock_post.return_value = make_response({"access_token": "tok"})
+    mock_request.return_value = make_response({"task": {"id": "t1"}}, 202)
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    status, body = client._raw_post_bytes("/api/importers/gramps/file", b"DATA")
+
+    assert status == 202
+    assert body == {"task": {"id": "t1"}}
+    mock_request.assert_called_once_with(
+        "POST",
+        "https://example.test/api/importers/gramps/file",
+        data=b"DATA",
+        headers={"Authorization": "Bearer tok", "Content-Type": "application/octet-stream"},
+        timeout=IMPORT_HTTP_TIMEOUT,
+    )

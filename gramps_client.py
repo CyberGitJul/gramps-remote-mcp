@@ -50,6 +50,10 @@ class FamilyDeleteCountMismatchError(Exception):
     pass
 
 
+EXPORT_TIMEOUT = 300
+IMPORT_HTTP_TIMEOUT = 300
+
+
 _DATE_MODIFIERS = {
     "exact": 0,
     "about": 3,
@@ -188,6 +192,55 @@ class GrampsClient(BlogMixin):
             )
         resp.raise_for_status()
         return resp.json() if resp.content else None
+
+    def _raw_get_bytes(self, path):
+        """GET raw bytes (binary download), mirroring _request's 401-relogin retry."""
+        if self._access_token is None:
+            self._login()
+        headers = {"Authorization": f"Bearer {self._access_token}"}
+        resp = requests.request(
+            "GET", f"{self.base_url}{path}", headers=headers, timeout=EXPORT_TIMEOUT
+        )
+        if resp.status_code == 401:
+            self._login()
+            headers = {"Authorization": f"Bearer {self._access_token}"}
+            resp = requests.request(
+                "GET", f"{self.base_url}{path}", headers=headers, timeout=EXPORT_TIMEOUT
+            )
+        resp.raise_for_status()
+        return resp.content
+
+    def _raw_post_bytes(self, path, data):
+        """POST a raw octet-stream body; returns (status_code, json-or-None). 201 and 202 both ok."""
+        if self._access_token is None:
+            self._login()
+        headers = {
+            "Authorization": f"Bearer {self._access_token}",
+            "Content-Type": "application/octet-stream",
+        }
+        resp = requests.request(
+            "POST",
+            f"{self.base_url}{path}",
+            data=data,
+            headers=headers,
+            timeout=IMPORT_HTTP_TIMEOUT,
+        )
+        if resp.status_code == 401:
+            self._login()
+            headers["Authorization"] = f"Bearer {self._access_token}"
+            resp = requests.request(
+                "POST",
+                f"{self.base_url}{path}",
+                data=data,
+                headers=headers,
+                timeout=IMPORT_HTTP_TIMEOUT,
+            )
+        resp.raise_for_status()
+        return resp.status_code, (resp.json() if resp.content else None)
+
+    def export_tree(self, extension="gramps"):
+        """Download the whole tree as raw (gzip) bytes. GET /api/exporters/{ext}/file (synchronous)."""
+        return self._raw_get_bytes(f"/api/exporters/{extension}/file")
 
     def get_person(self, gramps_id):
         # The live API 404s on an unknown gramps_id rather than returning an empty
