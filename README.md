@@ -81,6 +81,32 @@ clients never see them unless you opt in:
 To enable it, set `GRAMPS_ENABLE_DESTRUCTIVE=1` in the server's environment; the account
 also needs delete rights on the tree. Leave it unset for a read/edit-only deployment.
 
+### Backup / Restore
+
+Two tools move whole-tree files through a mounted backup directory:
+
+- `gramps_export_tree(filename=None, extension="gramps")` — writes a `.gramps`
+  (gzip XML) backup into the backup directory; returns `{path, bytes, counts}`.
+  Read-only, always available.
+- `gramps_import_file(filename, extension="gramps")` — imports a file from the
+  backup directory into the tree (**additive** — Gramps import never merges, it
+  stacks). Returns `{before, after, added}`. **Requires the account to have OWNER
+  role** (`GRAMPS_ROLE=4` when running `ops/setup-automation-user.sh`).
+
+Set `GRAMPS_BACKUP_DIR` to a directory inside the container and mount a host
+directory there so files survive and are reachable from the host:
+
+    docker run --rm -i \
+      --env-file .env \
+      -v /home/you/gramps/export:/data \
+      -e GRAMPS_BACKUP_DIR=/data \
+      gramps-remote-mcp
+
+Export writes to that directory; for import, drop the file into the host
+directory first, then call `gramps_import_file("your-file.gramps")`. Completion
+of an import is confirmed by polling object counts (never the task endpoint), so
+it works on both synchronous and Celery-backed Gramps Web deployments.
+
 ## Prerequisites
 
 - A running **Gramps Web** instance reachable over HTTP(S) with its REST API enabled.
