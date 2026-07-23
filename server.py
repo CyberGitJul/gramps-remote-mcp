@@ -2,10 +2,11 @@ import os
 
 from mcp.server.fastmcp import FastMCP
 
+import backup_store
 from gramps_client import GrampsClient
 
 
-def create_server(client, enable_destructive=None):
+def create_server(client, enable_destructive=None, backup_dir=None):
     # Destructive tools (e.g. gramps_delete_person) are OFF by default and are not
     # even registered — clients don't see them — unless explicitly opted in via
     # GRAMPS_ENABLE_DESTRUCTIVE=1 (or enable_destructive=True). Keeps the default
@@ -16,6 +17,9 @@ def create_server(client, enable_destructive=None):
         # An explicit arg is normalized the same strict way as the env var, so a
         # stray truthy string like "0" cannot fail *open* and expose the tool.
         enable_destructive = enable_destructive is True or enable_destructive == "1"
+
+    if backup_dir is None:
+        backup_dir = os.environ.get("GRAMPS_BACKUP_DIR")
 
     mcp = FastMCP("gramps-remote-mcp")
     tools = {}
@@ -265,6 +269,35 @@ def create_server(client, enable_destructive=None):
         existing note's text (keeping its type). Returns {gramps_id, updated}.
         """
         return client.update_blog_post(gramps_id, title, body, author)
+
+    @register
+    def gramps_export_tree(filename: str | None = None, extension: str = "gramps") -> dict:
+        """Export the whole tree as a backup file in the server's backup directory.
+
+        Writes a .gramps (gzip XML) backup and returns {path, bytes, counts}. `path`
+        is the container path, which maps to the mounted host directory. Requires
+        GRAMPS_BACKUP_DIR to be configured.
+        """
+        if not backup_dir:
+            raise RuntimeError("GRAMPS_BACKUP_DIR is not configured; cannot export.")
+        path = backup_store.resolve_export_path(backup_dir, filename, extension)
+        data = client.export_tree(extension)
+        backup_store.write_bytes(path, data)
+        return {"path": path, "bytes": len(data), "counts": client.object_counts()}
+
+    @register
+    def gramps_import_file(filename: str, extension: str = "gramps") -> dict:
+        """Import a file from the server's backup directory into the tree (additive).
+
+        Reads `filename` from GRAMPS_BACKUP_DIR and imports it, confirming completion
+        via object_counts. Returns {before, after, added}. The account must have OWNER
+        role. Requires GRAMPS_BACKUP_DIR to be configured.
+        """
+        if not backup_dir:
+            raise RuntimeError("GRAMPS_BACKUP_DIR is not configured; cannot import.")
+        path = backup_store.resolve_import_path(backup_dir, filename)
+        data = backup_store.read_bytes(path)
+        return client.import_file(data, extension)
 
     if enable_destructive:
 
