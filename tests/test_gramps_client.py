@@ -3224,3 +3224,47 @@ def test_raw_post_bytes_keeps_content_type_on_the_401_retry(mock_post, mock_requ
     assert seen[1]["data"] == b"DATA"
     assert seen[1]["timeout"] == IMPORT_HTTP_TIMEOUT
     assert "json" not in seen[1]
+
+
+def test_wait_for_counts_returns_once_the_predicate_holds_for_the_stability_window():
+    client = GrampsClient("https://example.test", "bot", "secret")
+    counts = {"people": 3}
+    client.object_counts = lambda: counts
+    clock = _SleepClock()
+
+    result = client._wait_for_counts(
+        lambda cur, elapsed: True,
+        lambda last: AssertionError("must not time out"),
+        poll_interval=2.0,
+        stability_window=2,
+        max_timeout=100,
+        _sleep=clock.sleep,
+        _now=clock.now,
+    )
+
+    assert result == counts
+    # First sighting plus two identical confirmations = three polls at 2s each.
+    assert clock.now() == 6.0
+
+
+def test_wait_for_counts_raises_the_exception_the_caller_supplied():
+    class _CallerTimeout(Exception):
+        pass
+
+    client = GrampsClient("https://example.test", "bot", "secret")
+    client.object_counts = lambda: {"people": 3}
+    clock = _SleepClock()
+
+    with pytest.raises(_CallerTimeout) as excinfo:
+        client._wait_for_counts(
+            lambda cur, elapsed: False,
+            lambda last: _CallerTimeout(f"last={last}"),
+            poll_interval=2.0,
+            stability_window=2,
+            max_timeout=6,
+            _sleep=clock.sleep,
+            _now=clock.now,
+        )
+
+    # The last counts seen travel into the caller's error, so a stall is diagnosable.
+    assert "last={'people': 3}" in str(excinfo.value)

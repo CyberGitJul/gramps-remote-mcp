@@ -236,6 +236,45 @@ class GrampsClient(BlogMixin):
         """Download the whole tree as raw (gzip) bytes. GET /api/exporters/{ext}/file (synchronous)."""
         return self._raw_get_bytes(f"/api/exporters/{extension}/file")
 
+    def _wait_for_counts(
+        self,
+        is_done,
+        on_timeout,
+        *,
+        initial=None,
+        poll_interval,
+        stability_window,
+        max_timeout,
+        _sleep,
+        _now,
+    ):
+        """Poll object_counts() until the counts hold still and `is_done` accepts them.
+
+        Done means the same counts came back for `stability_window` consecutive polls AND
+        `is_done(cur, elapsed)` is true, where `elapsed` is the seconds since this call
+        started. `on_timeout(last)` gets the last counts seen (or `initial`, if the
+        deadline was already past) and returns the exception to raise, so each caller
+        keeps its own error type. Completion is never derived from /api/tasks/ — that
+        endpoint is TTL-reaped and unreliable.
+        """
+        start = _now()
+        deadline = start + max_timeout
+        prev = None
+        stable = 0
+        last = initial
+        while _now() < deadline:
+            _sleep(poll_interval)
+            cur = self.object_counts()
+            last = cur
+            if cur == prev:
+                stable += 1
+            else:
+                stable = 0
+                prev = cur
+            if stable >= stability_window and is_done(cur, _now() - start):
+                return cur
+        raise on_timeout(last)
+
     def import_file(
         self,
         data,
@@ -264,32 +303,23 @@ class GrampsClient(BlogMixin):
         before_total = sum(before.values())
         self._raw_post_bytes(f"/api/importers/{extension}/file", data)
 
-        start = _now()
-        deadline = start + max_timeout
-        settle_floor = start + min_settle
-        prev = None
-        stable = 0
-        last = before
-        while _now() < deadline:
-            _sleep(poll_interval)
-            cur = self.object_counts()
-            last = cur
-            if cur == prev:
-                stable += 1
-            else:
-                stable = 0
-                prev = cur
-            if stable >= stability_window and (
-                sum(cur.values()) > before_total or _now() >= settle_floor
-            ):
-                return {
-                    "before": before,
-                    "after": cur,
-                    "added": {k: cur.get(k, 0) - before.get(k, 0) for k in cur},
-                }
-        raise ImportTimeoutError(
-            f"Import did not stabilize within {max_timeout}s; before={before}, last={last}"
+        after = self._wait_for_counts(
+            lambda cur, elapsed: sum(cur.values()) > before_total or elapsed >= min_settle,
+            lambda last: ImportTimeoutError(
+                f"Import did not stabilize within {max_timeout}s; before={before}, last={last}"
+            ),
+            initial=before,
+            poll_interval=poll_interval,
+            stability_window=stability_window,
+            max_timeout=max_timeout,
+            _sleep=_sleep,
+            _now=_now,
         )
+        return {
+            "before": before,
+            "after": after,
+            "added": {k: after.get(k, 0) - before.get(k, 0) for k in after},
+        }
 
     def get_person(self, gramps_id):
         # The live API 404s on an unknown gramps_id rather than returning an empty
