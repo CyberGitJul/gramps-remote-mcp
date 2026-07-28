@@ -354,6 +354,14 @@ def create_server(client, enable_destructive=None, backup_dir=None):
             way back. Returns {before, after, deleted}. Only present when the server
             was started with GRAMPS_ENABLE_DESTRUCTIVE=1; the account must have OWNER
             role.
+
+            This call can run for several minutes — up to roughly 300s for the delete
+            request itself (doubled if a session relogin retry fires), plus up to
+            another 300s confirming the tree is empty. If your MCP client gives up
+            before this returns, or a gateway error interrupts the connection, that is
+            not proof the wipe failed or succeeded: call gramps_get_object_counts
+            afterwards to find out what actually happened — the counts, not this
+            response, are the authority on the tree's state.
             """
             if confirm is not True:
                 raise ValueError("gramps_delete_all_objects requires confirm=True (destructive)")

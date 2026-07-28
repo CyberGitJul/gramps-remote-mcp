@@ -63,6 +63,10 @@ class DeleteAllTimeoutError(Exception):
     pass
 
 
+class DeleteAllStateUnknownError(Exception):
+    pass
+
+
 EXPORT_TIMEOUT = 300
 IMPORT_HTTP_TIMEOUT = 300
 IMPORT_POLL_INTERVAL = 2.0
@@ -352,8 +356,11 @@ class GrampsClient(BlogMixin):
         has to have read the tree before destroying it; a mismatch — or a counts read
         that comes back empty, which would otherwise let expected_count=0 pass without
         the tree's real size ever being established — raises DeleteAllCountMismatchError
-        before anything is written. The only HTTP call made before that check passes is
-        the object_counts() read used for the comparison. One POST to
+        before anything is written. That same error also covers "the counts could not be
+        read at all" (an empty object_counts() result): retrying with a different
+        expected_count will not help in that case, since there was no real count to
+        compare against in the first place. The only HTTP call made before that check
+        passes is the object_counts() read used for the comparison. One POST to
         /api/objects/delete/ (no ?namespaces= = every namespace) does the work — the
         server owns the deletion order, referential integrity, the default_person reset
         and the search reindex, and answers 200 (sync) or 202 (Celery) alike.
@@ -362,13 +369,23 @@ class GrampsClient(BlogMixin):
         accepts only tokens minted by /api/token/, so a long-lived session must not
         present whatever token it happens to be holding. The POST carries a long
         timeout — a synchronous deployment answers only once the wipe, including a full
-        search reindex, has finished. If it still times out, the request was
-        nonetheless delivered, so the timeout is swallowed and completion is read the
-        same way it always is: object_counts() until the total is 0 and stable, never
-        from /api/tasks/.
+        search reindex, has finished. If it still times out on the read (the request was
+        nonetheless delivered — a ConnectTimeout, meaning the connection never even
+        opened, is NOT treated this way), or a reverse proxy in front of a synchronous
+        deployment answers 502/503/504 (a gateway giving up before the server does — that
+        status describes the gateway, not the tree), the error is swallowed and
+        completion is read the same way it always is: object_counts() until the total is
+        0 and stable, never from /api/tasks/. Any other failure of the POST itself (401,
+        403, 500, ...) still fails fast.
 
         Returns {before, after, deleted}; raises DeleteAllTimeoutError at the deadline,
-        carrying `before` and the last counts seen so a partial wipe is diagnosable.
+        carrying `before` and the last counts seen so a partial wipe is diagnosable. If
+        the POST is delivered (or waved through by the fallthrough above) but something
+        then goes wrong while confirming completion — a transient error from
+        object_counts() itself — raises DeleteAllStateUnknownError instead, carrying
+        `before`: in that one case the delete was accepted but this call cannot tell the
+        caller what happened to their data, and gramps_get_object_counts must be
+        re-read before doing anything else.
         """
         before = self.object_counts()
         if not before:
@@ -385,27 +402,64 @@ class GrampsClient(BlogMixin):
         self._login()
         try:
             self._authed_request("POST", "/api/objects/delete/", timeout=DELETE_ALL_HTTP_TIMEOUT)
-        except requests.Timeout:
+        except requests.ReadTimeout:
             # The delete was delivered; a slow synchronous deployment merely held the
             # connection open past the deadline (the wipe includes a full search
             # reindex). Completion in this server always comes from the counts, never
             # from the response, so a wipe that is already running must be confirmed
             # there rather than treated as abandoned.
+            #
+            # This is deliberately requests.ReadTimeout, not the broader requests.Timeout:
+            # requests.ConnectTimeout also subclasses Timeout, but it means the
+            # connection was never established in the first place, so the request never
+            # landed — that case must fail fast like any other delivery failure, not be
+            # reported as "accepted and running".
             pass
-        after = self._wait_for_counts(
-            lambda cur, _elapsed: sum(cur.values()) == 0,
-            lambda last: DeleteAllTimeoutError(
-                f"Tree did not empty within {max_timeout}s; before={before}, last={last}. "
-                "The delete was accepted and may still be running server-side; do not "
-                "retry with a stale expected_count."
-            ),
-            initial=before,
-            poll_interval=poll_interval,
-            stability_window=stability_window,
-            max_timeout=max_timeout,
-            _sleep=_sleep,
-            _now=_now,
-        )
+        except requests.HTTPError as exc:
+            # A reverse proxy in front of a synchronous deployment can give up on the
+            # request before the server does — nginx's default proxy_read_timeout is
+            # 60s, well under DELETE_ALL_HTTP_TIMEOUT (300s) — while the server keeps
+            # deleting behind it. 502/503/504 describe the gateway, not the tree, so
+            # they are treated exactly like the read timeout above: fall through to the
+            # counts poll, the only authority on what actually happened. Every other
+            # status (401, 403, 500, ...) is about the request itself — bad auth,
+            # missing permissions, a genuine server error — and must still fail fast, so
+            # only these three statuses are singled out here.
+            if exc.response is None or exc.response.status_code not in (502, 503, 504):
+                raise
+        try:
+            after = self._wait_for_counts(
+                lambda cur, _elapsed: sum(cur.values()) == 0,
+                lambda last: DeleteAllTimeoutError(
+                    f"Tree did not empty within {max_timeout}s; before={before}, last={last}. "
+                    "The delete was accepted and may still be running server-side; do not "
+                    "retry with a stale expected_count."
+                ),
+                initial=before,
+                poll_interval=poll_interval,
+                stability_window=stability_window,
+                max_timeout=max_timeout,
+                _sleep=_sleep,
+                _now=_now,
+            )
+        except DeleteAllTimeoutError:
+            # Not an unknown state: it already carries `before` and the last counts
+            # seen, which is the more specific and more useful error. Pass it through
+            # unchanged rather than wrapping it in DeleteAllStateUnknownError below.
+            raise
+        except Exception as exc:
+            # Anything else here means the POST was accepted (or waved through above)
+            # but this call could not confirm what happened next — a transient 5xx from
+            # /api/metadata/, a connection reset mid-poll, etc. That is the one state in
+            # which the caller genuinely cannot tell what happened to their data, so it
+            # must not escape bare: wrap it with `before` and point at the one source of
+            # truth this server trusts.
+            raise DeleteAllStateUnknownError(
+                f"The delete request was accepted, but the tree's state could not be "
+                f"confirmed afterwards ({type(exc).__name__}: {exc}); before={before}. "
+                "Call gramps_get_object_counts before doing anything else to find out "
+                "what actually happened."
+            ) from exc
         return {
             "before": before,
             "after": after,

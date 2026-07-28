@@ -596,12 +596,21 @@ def test_gramps_delete_all_objects_requires_expected_count():
 
 
 def test_gramps_delete_all_objects_confirm_must_be_literal_true():
-    # this tool empties the whole tree, so the docstring's "requires confirm=True"
-    # has to mean the literal True, not anything truthy: only that value proceeds.
-    # Every other truthy value must raise BEFORE the client is ever touched, so a
-    # refactor of `confirm is not True` to `if not confirm:` cannot silently start
-    # wiping the tree on confirm=1 / "yes" while the suite stays green — parallels
-    # test_delete_person_confirm_must_be_literal_true in tests/test_gramps_client.py.
+    # This pins the function-level guard: called directly (as here, and as any
+    # transport that does not coerce its arguments would call it), only the literal
+    # True proceeds, and a refactor of `confirm is not True` to `if not confirm:`
+    # cannot silently start wiping the tree on confirm=1 / "yes" while the suite stays
+    # green — parallels test_delete_person_confirm_must_be_literal_true in
+    # tests/test_gramps_client.py.
+    #
+    # This does NOT mean those values are refused end-to-end over the real MCP
+    # transport: pydantic coerces truthy scalars like 1, "yes" and "true" to True
+    # before the function body ever runs, so they reach this guard as a genuine True
+    # and the wipe proceeds ([1] and {"ok": 1} are rejected by pydantic itself, with a
+    # different error, so they stay refused either way). There is no safety loss from
+    # that — those values do faithfully express confirmation — but expected_count, not
+    # this guard, is the load-bearing gate against an MCP client sending a stray
+    # truthy confirm.
     client = MagicMock()
     _, tools = create_server(client, enable_destructive=True)
 
