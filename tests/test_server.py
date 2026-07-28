@@ -549,3 +549,97 @@ def test_gramps_export_tree_without_backup_dir_errors(monkeypatch):
 
     with pytest.raises(RuntimeError):
         tools["gramps_export_tree"]()
+
+
+def test_gramps_delete_all_objects_registered_and_delegates_when_enabled():
+    client = MagicMock()
+    client.delete_all_objects.return_value = {
+        "before": {"people": 10},
+        "after": {"people": 0},
+        "deleted": {"people": 10},
+    }
+    _, tools = create_server(client, enable_destructive=True)
+
+    assert "gramps_delete_all_objects" in tools
+    result = tools["gramps_delete_all_objects"](confirm=True, expected_count=10)
+
+    client.delete_all_objects.assert_called_once_with(expected_count=10)
+    assert result["deleted"] == {"people": 10}
+
+
+def test_gramps_delete_all_objects_hidden_when_disabled():
+    client = MagicMock()
+    _, tools = create_server(client, enable_destructive=False)
+
+    assert "gramps_delete_all_objects" not in tools
+    assert "gramps_get_object_counts" in tools
+
+
+def test_gramps_delete_all_objects_requires_confirm():
+    client = MagicMock()
+    _, tools = create_server(client, enable_destructive=True)
+
+    with pytest.raises(ValueError):
+        tools["gramps_delete_all_objects"](expected_count=10)
+
+    client.delete_all_objects.assert_not_called()
+
+
+def test_gramps_delete_all_objects_requires_expected_count():
+    client = MagicMock()
+    _, tools = create_server(client, enable_destructive=True)
+
+    with pytest.raises(ValueError):
+        tools["gramps_delete_all_objects"](confirm=True)
+
+    client.delete_all_objects.assert_not_called()
+
+
+def test_gramps_delete_all_objects_confirm_must_be_literal_true():
+    # This pins the function-level guard: called directly (as here, and as any
+    # transport that does not coerce its arguments would call it), only the literal
+    # True proceeds, and a refactor of `confirm is not True` to `if not confirm:`
+    # cannot silently start wiping the tree on confirm=1 / "yes" while the suite stays
+    # green — parallels test_delete_person_confirm_must_be_literal_true in
+    # tests/test_gramps_client.py.
+    #
+    # This does NOT mean those values are refused end-to-end over the real MCP
+    # transport: pydantic coerces truthy scalars like 1, "yes" and "true" to True
+    # before the function body ever runs, so they reach this guard as a genuine True
+    # and the wipe proceeds ([1] and {"ok": 1} are rejected by pydantic itself, with a
+    # different error, so they stay refused either way). There is no safety loss from
+    # that — those values do faithfully express confirmation — but expected_count, not
+    # this guard, is the load-bearing gate against an MCP client sending a stray
+    # truthy confirm.
+    client = MagicMock()
+    _, tools = create_server(client, enable_destructive=True)
+
+    for truthy in (1, "yes", "true", [1], {"ok": 1}):
+        with pytest.raises(ValueError):
+            tools["gramps_delete_all_objects"](confirm=truthy, expected_count=10)
+
+    client.delete_all_objects.assert_not_called()
+
+
+def test_gramps_delete_all_objects_accepts_expected_count_zero():
+    # expected_count=0 is a legitimate call: an already-empty tree. A falsy check
+    # (`if not expected_count:`) instead of `is None` would wrongly reject it, so
+    # pin that 0 reaches the client rather than being treated as "missing".
+    client = MagicMock()
+    client.delete_all_objects.return_value = {"before": {}, "after": {}, "deleted": {}}
+    _, tools = create_server(client, enable_destructive=True)
+
+    tools["gramps_delete_all_objects"](confirm=True, expected_count=0)
+
+    client.delete_all_objects.assert_called_once_with(expected_count=0)
+
+
+def test_tool_counts_are_27_off_and_31_on():
+    # The README states these numbers and they drift every wave; fail here rather than
+    # in review. Update both this test and README.md when a wave adds a tool.
+    client = MagicMock()
+    _, off = create_server(client, enable_destructive=False)
+    _, on = create_server(client, enable_destructive=True)
+
+    assert len(off) == 27
+    assert len(on) == 31

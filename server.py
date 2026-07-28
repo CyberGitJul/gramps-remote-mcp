@@ -339,6 +339,39 @@ def create_server(client, enable_destructive=None, backup_dir=None):
             """
             return client.delete_blog_post(gramps_id, confirm)
 
+        @register
+        def gramps_delete_all_objects(
+            confirm: bool = False, expected_count: int | None = None
+        ) -> dict:
+            """Delete EVERY object in the tree — people, families, events, places,
+            sources, citations, repositories, media, notes and tags. DESTRUCTIVE AND
+            IRREVERSIBLE: there is no undo and no partial mode.
+
+            Requires confirm=True AND expected_count set to the tree's current total
+            object count — call gramps_get_object_counts first and sum its values. If
+            expected_count does not match the live total, nothing is deleted. Take a
+            backup with gramps_export_tree before calling this; that file is the only
+            way back. Returns {before, after, deleted}. Only present when the server
+            was started with GRAMPS_ENABLE_DESTRUCTIVE=1; the account must have OWNER
+            role.
+
+            This call can run for several minutes — up to roughly 300s for the delete
+            request itself (doubled if a session relogin retry fires), plus up to
+            another 300s confirming the tree is empty. If your MCP client gives up
+            before this returns, or a gateway error interrupts the connection, that is
+            not proof the wipe failed or succeeded: call gramps_get_object_counts
+            afterwards to find out what actually happened — the counts, not this
+            response, are the authority on the tree's state.
+            """
+            if confirm is not True:
+                raise ValueError("gramps_delete_all_objects requires confirm=True (destructive)")
+            if expected_count is None:
+                raise ValueError(
+                    "gramps_delete_all_objects requires expected_count: the tree's current "
+                    "total object count (sum gramps_get_object_counts)"
+                )
+            return client.delete_all_objects(expected_count=expected_count)
+
     return mcp, tools
 
 

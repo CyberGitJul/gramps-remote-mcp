@@ -141,7 +141,10 @@ Order of operations — the precondition is checked **before** anything is destr
 6. Return `{"before": before, "after": after, "deleted": {k: before[k] - after.get(k, 0)
    for k in before}}`.
 
-New exceptions: `DeleteAllCountMismatchError`, `DeleteAllTimeoutError`.
+New exceptions: `DeleteAllCountMismatchError`, `DeleteAllTimeoutError`,
+`DeleteAllStateUnknownError` (raised from the final review round when confirming
+completion itself fails after the delete request — the delete may have been accepted,
+but the resulting state could not be confirmed).
 
 **Empty tree is not a special case.** `expected_count=0` against an empty tree passes the
 precondition, posts, and the completion predicate is satisfied on the first poll. No
