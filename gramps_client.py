@@ -76,6 +76,9 @@ IMPORT_MIN_SETTLE = 30
 DELETE_ALL_POLL_INTERVAL = 2.0
 DELETE_ALL_STABILITY_WINDOW = 2
 DELETE_ALL_MAX_TIMEOUT = 300
+# Long, like EXPORT_TIMEOUT/IMPORT_HTTP_TIMEOUT: a synchronous deployment answers only
+# once the wipe (including a full search reindex) has finished.
+DELETE_ALL_HTTP_TIMEOUT = 300
 
 
 _DATE_MODIFIERS = {
@@ -346,21 +349,33 @@ class GrampsClient(BlogMixin):
         """Delete every object in the tree. DESTRUCTIVE AND IRREVERSIBLE.
 
         `expected_count` must equal the tree's current total object count, so a caller
-        has to have read the tree before destroying it; a mismatch raises
-        DeleteAllCountMismatchError before a single HTTP call is made. One POST to
+        has to have read the tree before destroying it; a mismatch — or a counts read
+        that comes back empty, which would otherwise let expected_count=0 pass without
+        the tree's real size ever being established — raises DeleteAllCountMismatchError
+        before anything is written. The only HTTP call made before that check passes is
+        the object_counts() read used for the comparison. One POST to
         /api/objects/delete/ (no ?namespaces= = every namespace) does the work — the
         server owns the deletion order, referential integrity, the default_person reset
         and the search reindex, and answers 200 (sync) or 202 (Celery) alike.
 
         A fresh login is forced first: the endpoint is a FreshProtectedResource and
         accepts only tokens minted by /api/token/, so a long-lived session must not
-        present whatever token it happens to be holding. Completion is read from
-        object_counts until the total is 0 and stable, never from /api/tasks/.
+        present whatever token it happens to be holding. The POST carries a long
+        timeout — a synchronous deployment answers only once the wipe, including a full
+        search reindex, has finished. If it still times out, the request was
+        nonetheless delivered, so the timeout is swallowed and completion is read the
+        same way it always is: object_counts() until the total is 0 and stable, never
+        from /api/tasks/.
 
         Returns {before, after, deleted}; raises DeleteAllTimeoutError at the deadline,
         carrying `before` and the last counts seen so a partial wipe is diagnosable.
         """
         before = self.object_counts()
+        if not before:
+            raise DeleteAllCountMismatchError(
+                "object_counts() returned no counts; refusing to wipe because the "
+                "tree's size could not be established. Nothing was deleted."
+            )
         before_total = sum(before.values())
         if expected_count != before_total:
             raise DeleteAllCountMismatchError(
@@ -368,11 +383,21 @@ class GrampsClient(BlogMixin):
                 f"{before_total}; nothing was deleted. Counts: {before}"
             )
         self._login()
-        self._request("POST", "/api/objects/delete/")
+        try:
+            self._authed_request("POST", "/api/objects/delete/", timeout=DELETE_ALL_HTTP_TIMEOUT)
+        except requests.Timeout:
+            # The delete was delivered; a slow synchronous deployment merely held the
+            # connection open past the deadline (the wipe includes a full search
+            # reindex). Completion in this server always comes from the counts, never
+            # from the response, so a wipe that is already running must be confirmed
+            # there rather than treated as abandoned.
+            pass
         after = self._wait_for_counts(
             lambda cur, _elapsed: sum(cur.values()) == 0,
             lambda last: DeleteAllTimeoutError(
-                f"Tree did not empty within {max_timeout}s; before={before}, last={last}"
+                f"Tree did not empty within {max_timeout}s; before={before}, last={last}. "
+                "The delete was accepted and may still be running server-side; do not "
+                "retry with a stale expected_count."
             ),
             initial=before,
             poll_interval=poll_interval,

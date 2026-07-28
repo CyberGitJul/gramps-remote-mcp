@@ -3270,7 +3270,11 @@ def test_wait_for_counts_raises_the_exception_the_caller_supplied():
     assert "last={'people': 3}" in str(excinfo.value)
 
 
-from gramps_client import DeleteAllCountMismatchError, DeleteAllTimeoutError
+from gramps_client import (
+    DELETE_ALL_HTTP_TIMEOUT,
+    DeleteAllCountMismatchError,
+    DeleteAllTimeoutError,
+)
 
 
 @patch("gramps_client.requests.request")
@@ -3291,6 +3295,37 @@ def test_delete_all_objects_refuses_a_count_mismatch_without_posting(mock_post, 
         "GET",
         "https://example.test/api/metadata/",
     )
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_all_objects_refuses_a_count_overstatement_without_posting(mock_post, mock_request):
+    # A mutation of `!=` to `<` in the guard would let an over-stated expected_count sail
+    # through and wipe a tree that was never actually counted that large. Cover both
+    # directions of the guard, not just the understatement.
+    mock_post.return_value = make_response({"access_token": "tok"})
+    mock_request.side_effect = [_metadata({"people": 5, "families": 2})]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(DeleteAllCountMismatchError):
+        client.delete_all_objects(expected_count=9)
+
+    assert mock_request.call_count == 1
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_all_objects_refuses_when_the_counts_read_comes_back_empty(mock_post, mock_request):
+    # sum({}.values()) == 0, so an empty counts dict would let expected_count=0 pass the
+    # guard vacuously — the tree's real size was never established. Refuse outright.
+    mock_post.return_value = make_response({"access_token": "tok"})
+    mock_request.side_effect = [_metadata({})]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(DeleteAllCountMismatchError):
+        client.delete_all_objects(expected_count=0)
+
+    assert mock_request.call_count == 1
 
 
 @patch("gramps_client.requests.request")
@@ -3395,6 +3430,12 @@ def test_delete_all_objects_on_an_empty_tree_succeeds(mock_post, mock_request):
 
     assert result["deleted"] == {"people": 0, "families": 0}
     assert result["after"] == empty
+    # The POST must actually have gone out — an `if before_total == 0: return ...`
+    # short-circuit would produce the identical result without ever calling it.
+    assert mock_request.call_args_list[1].args == (
+        "POST",
+        "https://example.test/api/objects/delete/",
+    )
 
 
 @patch("gramps_client.requests.request")
@@ -3458,4 +3499,64 @@ def test_delete_all_objects_requires_expected_count(mock_post, mock_request):
     with pytest.raises(TypeError):
         client.delete_all_objects()
 
+    # Keyword-only, not just required: a positional value must be rejected too, or a
+    # call site could smuggle expected_count in without naming it.
+    with pytest.raises(TypeError):
+        client.delete_all_objects(5)
+
     assert mock_request.call_count == 0
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_all_objects_posts_with_the_long_timeout(mock_post, mock_request):
+    # The wipe includes a full search reindex; a synchronous deployment only answers
+    # once it's done. The default 10s _request() timeout would abandon it mid-flight.
+    mock_post.return_value = make_response({"access_token": "tok"})
+    before = {"people": 10, "families": 4}
+    empty = {"people": 0, "families": 0}
+    mock_request.side_effect = [
+        _metadata(before),  # precondition read
+        make_response({"deleted": 14}, 200),  # synchronous wipe
+        _metadata(empty),  # poll 1 (first sighting)
+        _metadata(empty),  # poll 2
+        _metadata(empty),  # poll 3 -> stable
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    client.delete_all_objects(
+        expected_count=14, stability_window=2, poll_interval=0, _sleep=lambda s: None
+    )
+
+    assert mock_request.call_args_list[1].kwargs["timeout"] == DELETE_ALL_HTTP_TIMEOUT
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_all_objects_confirms_from_counts_when_the_post_times_out(mock_post, mock_request):
+    # A ReadTimeout on the delete POST does not mean the delete failed — a slow
+    # synchronous deployment can hold the connection open for the whole wipe. The
+    # request was still delivered, so the timeout must be swallowed and completion
+    # confirmed the same way it always is: via object_counts(). This is not
+    # error-swallowing in the reckless sense — no other exception type is caught, and
+    # if the wipe genuinely never happened the counts poll will simply time out too.
+    import requests
+
+    mock_post.return_value = make_response({"access_token": "tok"})
+    before = {"people": 10, "families": 4}
+    empty = {"people": 0, "families": 0}
+    mock_request.side_effect = [
+        _metadata(before),  # precondition read
+        requests.ReadTimeout(),  # the delete POST times out client-side
+        _metadata(empty),  # poll 1 (first sighting)
+        _metadata(empty),  # poll 2
+        _metadata(empty),  # poll 3 -> stable
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.delete_all_objects(
+        expected_count=14, stability_window=2, poll_interval=0, _sleep=lambda s: None
+    )
+
+    assert result["deleted"] == before
+    assert result["after"] == empty
