@@ -549,3 +549,58 @@ def test_gramps_export_tree_without_backup_dir_errors(monkeypatch):
 
     with pytest.raises(RuntimeError):
         tools["gramps_export_tree"]()
+
+
+def test_gramps_delete_all_objects_registered_and_delegates_when_enabled():
+    client = MagicMock()
+    client.delete_all_objects.return_value = {
+        "before": {"people": 10},
+        "after": {"people": 0},
+        "deleted": {"people": 10},
+    }
+    _, tools = create_server(client, enable_destructive=True)
+
+    assert "gramps_delete_all_objects" in tools
+    result = tools["gramps_delete_all_objects"](confirm=True, expected_count=10)
+
+    client.delete_all_objects.assert_called_once_with(expected_count=10)
+    assert result["deleted"] == {"people": 10}
+
+
+def test_gramps_delete_all_objects_hidden_when_disabled():
+    client = MagicMock()
+    _, tools = create_server(client, enable_destructive=False)
+
+    assert "gramps_delete_all_objects" not in tools
+    assert "gramps_get_object_counts" in tools
+
+
+def test_gramps_delete_all_objects_requires_confirm():
+    client = MagicMock()
+    _, tools = create_server(client, enable_destructive=True)
+
+    with pytest.raises(ValueError):
+        tools["gramps_delete_all_objects"](expected_count=10)
+
+    client.delete_all_objects.assert_not_called()
+
+
+def test_gramps_delete_all_objects_requires_expected_count():
+    client = MagicMock()
+    _, tools = create_server(client, enable_destructive=True)
+
+    with pytest.raises(ValueError):
+        tools["gramps_delete_all_objects"](confirm=True)
+
+    client.delete_all_objects.assert_not_called()
+
+
+def test_tool_counts_are_27_off_and_31_on():
+    # The README states these numbers and they drift every wave; fail here rather than
+    # in review. Update both this test and README.md when a wave adds a tool.
+    client = MagicMock()
+    _, off = create_server(client, enable_destructive=False)
+    _, on = create_server(client, enable_destructive=True)
+
+    assert len(off) == 27
+    assert len(on) == 31
