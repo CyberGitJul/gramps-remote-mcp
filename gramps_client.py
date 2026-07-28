@@ -189,65 +189,47 @@ class GrampsClient(BlogMixin):
         resp.raise_for_status()
         self._access_token = resp.json()["access_token"]
 
-    def _request(self, method, path, json_body=None):
+    def _authed_request(self, method, path, *, timeout, extra_headers=None, **body_kwargs):
+        """Send an authenticated request, retrying once through a fresh login on 401.
+
+        Each call site passes its own timeout, body kwarg (json=/data=) and extra headers;
+        nothing is inherited from another caller. The header dict is built ONCE and the
+        retry replaces only the Authorization value, so caller-supplied headers survive
+        the second attempt. That matters for the import POST: rebuilding the dict would
+        drop its Content-Type, and only when a token expires mid-import.
+        """
         if self._access_token is None:
             self._login()
         headers = {"Authorization": f"Bearer {self._access_token}"}
-        resp = requests.request(
-            method, f"{self.base_url}{path}", json=json_body, headers=headers, timeout=10
-        )
-        if resp.status_code == 401:
-            self._login()
-            headers = {"Authorization": f"Bearer {self._access_token}"}
-            resp = requests.request(
-                method, f"{self.base_url}{path}", json=json_body, headers=headers, timeout=10
-            )
-        resp.raise_for_status()
-        return resp.json() if resp.content else None
-
-    def _raw_get_bytes(self, path):
-        """GET raw bytes (binary download), mirroring _request's 401-relogin retry."""
-        if self._access_token is None:
-            self._login()
-        headers = {"Authorization": f"Bearer {self._access_token}"}
-        resp = requests.request(
-            "GET", f"{self.base_url}{path}", headers=headers, timeout=EXPORT_TIMEOUT
-        )
-        if resp.status_code == 401:
-            self._login()
-            headers = {"Authorization": f"Bearer {self._access_token}"}
-            resp = requests.request(
-                "GET", f"{self.base_url}{path}", headers=headers, timeout=EXPORT_TIMEOUT
-            )
-        resp.raise_for_status()
-        return resp.content
-
-    def _raw_post_bytes(self, path, data):
-        """POST a raw octet-stream body; returns (status_code, json-or-None). 201 and 202 both ok."""
-        if self._access_token is None:
-            self._login()
-        headers = {
-            "Authorization": f"Bearer {self._access_token}",
-            "Content-Type": "application/octet-stream",
-        }
-        resp = requests.request(
-            "POST",
-            f"{self.base_url}{path}",
-            data=data,
-            headers=headers,
-            timeout=IMPORT_HTTP_TIMEOUT,
-        )
+        if extra_headers:
+            headers.update(extra_headers)
+        url = f"{self.base_url}{path}"
+        resp = requests.request(method, url, headers=headers, timeout=timeout, **body_kwargs)
         if resp.status_code == 401:
             self._login()
             headers["Authorization"] = f"Bearer {self._access_token}"
-            resp = requests.request(
-                "POST",
-                f"{self.base_url}{path}",
-                data=data,
-                headers=headers,
-                timeout=IMPORT_HTTP_TIMEOUT,
-            )
+            resp = requests.request(method, url, headers=headers, timeout=timeout, **body_kwargs)
         resp.raise_for_status()
+        return resp
+
+    def _request(self, method, path, json_body=None):
+        # json= is passed unconditionally (including None) — the existing suite pins that.
+        resp = self._authed_request(method, path, timeout=10, json=json_body)
+        return resp.json() if resp.content else None
+
+    def _raw_get_bytes(self, path):
+        """GET raw bytes (binary download); 401 relogin+retry handled by _authed_request."""
+        return self._authed_request("GET", path, timeout=EXPORT_TIMEOUT).content
+
+    def _raw_post_bytes(self, path, data):
+        """POST a raw octet-stream body; returns (status_code, json-or-None). 201 and 202 both ok."""
+        resp = self._authed_request(
+            "POST",
+            path,
+            timeout=IMPORT_HTTP_TIMEOUT,
+            extra_headers={"Content-Type": "application/octet-stream"},
+            data=data,
+        )
         return resp.status_code, (resp.json() if resp.content else None)
 
     def export_tree(self, extension="gramps"):
