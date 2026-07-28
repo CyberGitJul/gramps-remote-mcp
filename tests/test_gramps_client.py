@@ -3115,3 +3115,112 @@ def test_import_file_min_settle_is_adjustable(mock_post, mock_request):
     assert result["added"] == {"people": 0}
     # Floor of 4s at 2s per poll: done on the third poll, not the fifteenth the default implies.
     assert clock.now() == 6.0
+
+
+def _recording_request(responses):
+    """side_effect for requests.request that snapshots each call.
+
+    The headers are copied at call time on purpose: _raw_post_bytes mutates its header
+    dict in place for the retry, so mock.call_args_list would show the refreshed token
+    on both recorded attempts and hide what the first one actually sent.
+    """
+    seen = []
+
+    def side_effect(method, url, **kwargs):
+        snapshot = dict(kwargs)
+        snapshot["headers"] = dict(kwargs.get("headers") or {})
+        snapshot["method"] = method
+        snapshot["url"] = url
+        seen.append(snapshot)
+        return responses.pop(0)
+
+    return side_effect, seen
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_request_retries_once_with_a_fresh_token_after_401(mock_post, mock_request):
+    # Characterization: pins _request's retry contract before it is refactored.
+    mock_post.side_effect = [
+        make_response({"access_token": "first"}),
+        make_response({"access_token": "fresh"}),
+    ]
+    side_effect, seen = _recording_request([make_response(None, 401), make_response({"ok": True})])
+    mock_request.side_effect = side_effect
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client._request("POST", "/api/objects/", {"a": 1})
+
+    assert result == {"ok": True}
+    assert mock_post.call_count == 2  # lazy login, then the 401 relogin
+    assert len(seen) == 2
+    assert seen[0]["headers"]["Authorization"] == "Bearer first"
+    assert seen[1]["headers"] == {"Authorization": "Bearer fresh"}
+    assert seen[1]["method"] == "POST"
+    assert seen[1]["url"] == "https://example.test/api/objects/"
+    assert seen[1]["json"] == {"a": 1}  # the body is re-sent, not dropped
+    assert seen[1]["timeout"] == 10  # _request's own timeout, not an export/import one
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_raw_get_bytes_retries_once_with_a_fresh_token_after_401(mock_post, mock_request):
+    # Characterization: pins _raw_get_bytes' retry contract before it is refactored.
+    mock_post.side_effect = [
+        make_response({"access_token": "first"}),
+        make_response({"access_token": "fresh"}),
+    ]
+    ok = MagicMock()
+    ok.status_code = 200
+    ok.content = b"\x1f\x8bGRAMPS"
+    ok.raise_for_status.return_value = None
+    side_effect, seen = _recording_request([make_response(None, 401), ok])
+    mock_request.side_effect = side_effect
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    data = client._raw_get_bytes("/api/exporters/gramps/file")
+
+    assert data == b"\x1f\x8bGRAMPS"
+    assert mock_post.call_count == 2
+    assert seen[0]["headers"]["Authorization"] == "Bearer first"
+    assert seen[1]["headers"] == {"Authorization": "Bearer fresh"}
+    assert seen[1]["method"] == "GET"
+    assert seen[1]["url"] == "https://example.test/api/exporters/gramps/file"
+    assert seen[1]["timeout"] == EXPORT_TIMEOUT  # the long download timeout, not 10
+    assert "json" not in seen[1]  # a GET download sends no body kwarg at all
+    assert "data" not in seen[1]
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_raw_post_bytes_keeps_content_type_on_the_401_retry(mock_post, mock_request):
+    # Characterization, and the assertion that a naive consolidation fails: the retried
+    # import POST must still declare application/octet-stream. Rebuilding the header dict
+    # from scratch drops it, and the damage only shows when a JWT expires mid-import.
+    mock_post.side_effect = [
+        make_response({"access_token": "first"}),
+        make_response({"access_token": "fresh"}),
+    ]
+    side_effect, seen = _recording_request(
+        [make_response(None, 401), make_response({"task": {"id": "t1"}}, 202)]
+    )
+    mock_request.side_effect = side_effect
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    status, body = client._raw_post_bytes("/api/importers/gramps/file", b"DATA")
+
+    assert (status, body) == (202, {"task": {"id": "t1"}})
+    assert mock_post.call_count == 2
+    assert seen[0]["headers"] == {
+        "Authorization": "Bearer first",
+        "Content-Type": "application/octet-stream",
+    }
+    assert seen[1]["headers"] == {
+        "Authorization": "Bearer fresh",
+        "Content-Type": "application/octet-stream",
+    }
+    assert seen[1]["method"] == "POST"
+    assert seen[1]["url"] == "https://example.test/api/importers/gramps/file"
+    assert seen[1]["data"] == b"DATA"
+    assert seen[1]["timeout"] == IMPORT_HTTP_TIMEOUT
+    assert "json" not in seen[1]
