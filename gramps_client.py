@@ -55,6 +55,14 @@ class ImportTimeoutError(Exception):
     pass
 
 
+class DeleteAllCountMismatchError(Exception):
+    pass
+
+
+class DeleteAllTimeoutError(Exception):
+    pass
+
+
 EXPORT_TIMEOUT = 300
 IMPORT_HTTP_TIMEOUT = 300
 IMPORT_POLL_INTERVAL = 2.0
@@ -64,6 +72,10 @@ IMPORT_MAX_TIMEOUT = 300
 # finished rather than not-yet-started. Only gates the no-growth path: once counts grow and
 # settle, the import is done immediately.
 IMPORT_MIN_SETTLE = 30
+
+DELETE_ALL_POLL_INTERVAL = 2.0
+DELETE_ALL_STABILITY_WINDOW = 2
+DELETE_ALL_MAX_TIMEOUT = 300
 
 
 _DATE_MODIFIERS = {
@@ -319,6 +331,60 @@ class GrampsClient(BlogMixin):
             "before": before,
             "after": after,
             "added": {k: after.get(k, 0) - before.get(k, 0) for k in after},
+        }
+
+    def delete_all_objects(
+        self,
+        *,
+        expected_count,
+        poll_interval=DELETE_ALL_POLL_INTERVAL,
+        stability_window=DELETE_ALL_STABILITY_WINDOW,
+        max_timeout=DELETE_ALL_MAX_TIMEOUT,
+        _sleep=time.sleep,
+        _now=time.monotonic,
+    ):
+        """Delete every object in the tree. DESTRUCTIVE AND IRREVERSIBLE.
+
+        `expected_count` must equal the tree's current total object count, so a caller
+        has to have read the tree before destroying it; a mismatch raises
+        DeleteAllCountMismatchError before a single HTTP call is made. One POST to
+        /api/objects/delete/ (no ?namespaces= = every namespace) does the work — the
+        server owns the deletion order, referential integrity, the default_person reset
+        and the search reindex, and answers 200 (sync) or 202 (Celery) alike.
+
+        A fresh login is forced first: the endpoint is a FreshProtectedResource and
+        accepts only tokens minted by /api/token/, so a long-lived session must not
+        present whatever token it happens to be holding. Completion is read from
+        object_counts until the total is 0 and stable, never from /api/tasks/.
+
+        Returns {before, after, deleted}; raises DeleteAllTimeoutError at the deadline,
+        carrying `before` and the last counts seen so a partial wipe is diagnosable.
+        """
+        before = self.object_counts()
+        before_total = sum(before.values())
+        if expected_count != before_total:
+            raise DeleteAllCountMismatchError(
+                f"expected_count={expected_count} does not match the live total "
+                f"{before_total}; nothing was deleted. Counts: {before}"
+            )
+        self._login()
+        self._request("POST", "/api/objects/delete/")
+        after = self._wait_for_counts(
+            lambda cur, _elapsed: sum(cur.values()) == 0,
+            lambda last: DeleteAllTimeoutError(
+                f"Tree did not empty within {max_timeout}s; before={before}, last={last}"
+            ),
+            initial=before,
+            poll_interval=poll_interval,
+            stability_window=stability_window,
+            max_timeout=max_timeout,
+            _sleep=_sleep,
+            _now=_now,
+        )
+        return {
+            "before": before,
+            "after": after,
+            "deleted": {k: before[k] - after.get(k, 0) for k in before},
         }
 
     def get_person(self, gramps_id):
