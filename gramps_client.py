@@ -60,6 +60,10 @@ IMPORT_HTTP_TIMEOUT = 300
 IMPORT_POLL_INTERVAL = 2.0
 IMPORT_STABILITY_WINDOW = 2
 IMPORT_MAX_TIMEOUT = 300
+# How long an import that has not changed any count must hold steady before it counts as
+# finished rather than not-yet-started. Only gates the no-growth path: once counts grow and
+# settle, the import is done immediately.
+IMPORT_MIN_SETTLE = 30
 
 
 _DATE_MODIFIERS = {
@@ -258,21 +262,29 @@ class GrampsClient(BlogMixin):
         poll_interval=IMPORT_POLL_INTERVAL,
         stability_window=IMPORT_STABILITY_WINDOW,
         max_timeout=IMPORT_MAX_TIMEOUT,
+        min_settle=IMPORT_MIN_SETTLE,
         _sleep=time.sleep,
         _now=time.monotonic,
     ):
         """Import a file into the tree (additive). POST octet-stream, confirm via object_counts.
 
         Completion is detected from object_counts (GET /api/metadata/), never from
-        /api/tasks/ (unreliable: TTL-reaped). Done once the total count has grown
-        beyond `before` AND the counts are identical for `stability_window`
-        consecutive confirmation polls. Works for sync (201) and async (202) alike.
+        /api/tasks/ (unreliable: TTL-reaped). Done once the counts are identical for
+        `stability_window` consecutive confirmation polls AND either the total has grown
+        beyond `before`, or `min_settle` seconds have passed. The second case is a real
+        import that added nothing (a duplicate-free or empty file) — reporting it as a
+        timeout would call a success a failure. The settle floor keeps an async import
+        that has not started writing yet from being mistaken for one: unchanged counts
+        alone are not enough until it has held that way for `min_settle` seconds.
+        Works for sync (201) and async (202) alike.
         """
         before = self.object_counts()
         before_total = sum(before.values())
         self._raw_post_bytes(f"/api/importers/{extension}/file", data)
 
-        deadline = _now() + max_timeout
+        start = _now()
+        deadline = start + max_timeout
+        settle_floor = start + min_settle
         prev = None
         stable = 0
         last = before
@@ -285,7 +297,9 @@ class GrampsClient(BlogMixin):
             else:
                 stable = 0
                 prev = cur
-            if sum(cur.values()) > before_total and stable >= stability_window:
+            if stable >= stability_window and (
+                sum(cur.values()) > before_total or _now() >= settle_floor
+            ):
                 return {
                     "before": before,
                     "after": cur,

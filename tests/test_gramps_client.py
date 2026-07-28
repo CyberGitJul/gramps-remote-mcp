@@ -2985,26 +2985,133 @@ def test_import_file_handles_sync_201(mock_post, mock_request):
     assert result["added"] == {"people": 1}
 
 
+from itertools import chain, repeat
+
+
+class _SleepClock:
+    """Time advances only when the code sleeps — the same way the real polling loop moves."""
+
+    def __init__(self):
+        self.t = 0.0
+
+    def now(self):
+        return self.t
+
+    def sleep(self, seconds):
+        self.t += seconds
+
+
 @patch("gramps_client.requests.request")
 @patch("gramps_client.requests.post")
-def test_import_file_timeout_raises(mock_post, mock_request):
+def test_import_file_accepts_import_that_added_nothing(mock_post, mock_request):
+    # A duplicate-free or empty file imports successfully but adds no objects. That is a
+    # finished import, not a stalled one, and must not be reported as a timeout.
+    mock_post.return_value = make_response({"access_token": "tok"})
+    counts = {"people": 10, "families": 4}
+    mock_request.side_effect = chain(
+        [_metadata(counts), make_response(None, 201)],
+        repeat(_metadata(counts)),
+    )
+    clock = _SleepClock()
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.import_file(
+        b"DATA",
+        stability_window=2,
+        poll_interval=2.0,
+        _sleep=clock.sleep,
+        _now=clock.now,
+    )
+
+    assert result["before"] == counts
+    assert result["after"] == counts
+    assert result["added"] == {"people": 0, "families": 0}
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_import_file_does_not_call_a_slow_starting_import_empty(mock_post, mock_request):
+    # An async import that has not started writing yet looks exactly like one that added
+    # nothing: unchanged counts, holding steady. Accepting "stable" on its own would report
+    # added=0 while the server is still working, so no-growth is only accepted once the
+    # minimum settle time has passed.
+    mock_post.return_value = make_response({"access_token": "tok"})
+    before = {"people": 10, "families": 4}
+    after = {"people": 12, "families": 4}
+    mock_request.side_effect = [
+        _metadata(before),  # before counts
+        make_response(None, 201),  # import POST
+        _metadata(before),  # poll 1 — server has not started writing
+        _metadata(before),  # poll 2
+        _metadata(before),  # poll 3 — stable, but well before the settle floor
+        _metadata(after),  # poll 4 — objects start landing
+        _metadata(after),  # poll 5
+        _metadata(after),  # poll 6 — grown and stable -> done
+    ]
+    clock = _SleepClock()
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.import_file(
+        b"DATA",
+        stability_window=2,
+        poll_interval=2.0,
+        _sleep=clock.sleep,
+        _now=clock.now,
+    )
+
+    assert result["after"] == after
+    assert result["added"] == {"people": 2, "families": 0}
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_import_file_times_out_when_counts_never_settle(mock_post, mock_request):
+    # The remaining timeout case: counts are still moving when the deadline hits, so there
+    # is no finished state to report. Unchanged-but-settled counts are NOT this case — that
+    # is a real import that added nothing, see test_import_file_accepts_import_that_added_nothing.
     mock_post.return_value = make_response({"access_token": "tok"})
     before = {"people": 10}
-    mock_request.side_effect = [
-        _metadata(before),  # before
-        make_response(None, 201),  # import
-        _metadata(before),  # poll: no growth
-        _metadata(before),
-        _metadata(before),
-    ]
-    clock = iter([0.0, 0.0, 1.0, 2.0, 999.0])
+    mock_request.side_effect = chain(
+        [_metadata(before), make_response(None, 201)],
+        (_metadata({"people": 10 + i}) for i in range(1, 100)),  # never the same twice
+    )
+    clock = _SleepClock()
     client = GrampsClient("https://example.test", "bot", "secret")
 
     with pytest.raises(ImportTimeoutError):
         client.import_file(
             b"DATA",
             max_timeout=10,
-            poll_interval=0,
-            _sleep=lambda s: None,
-            _now=lambda: next(clock),
+            poll_interval=2.0,
+            stability_window=2,
+            _sleep=clock.sleep,
+            _now=clock.now,
         )
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_import_file_min_settle_is_adjustable(mock_post, mock_request):
+    # The settle floor is injectable like the other polling knobs, so a caller that knows
+    # its import is quick need not wait the default 30s to hear "added nothing".
+    mock_post.return_value = make_response({"access_token": "tok"})
+    counts = {"people": 10}
+    mock_request.side_effect = chain(
+        [_metadata(counts), make_response(None, 201)],
+        repeat(_metadata(counts)),
+    )
+    clock = _SleepClock()
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.import_file(
+        b"DATA",
+        stability_window=2,
+        poll_interval=2.0,
+        min_settle=4.0,
+        _sleep=clock.sleep,
+        _now=clock.now,
+    )
+
+    assert result["added"] == {"people": 0}
+    # Floor of 4s at 2s per poll: done on the third poll, not the fifteenth the default implies.
+    assert clock.now() == 6.0

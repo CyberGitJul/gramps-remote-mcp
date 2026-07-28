@@ -290,8 +290,10 @@ def create_server(client, enable_destructive=None, backup_dir=None):
         """Import a file from the server's backup directory into the tree (additive).
 
         Reads `filename` from GRAMPS_BACKUP_DIR and imports it, confirming completion
-        via object_counts. Returns {before, after, added}. The account must have OWNER
-        role. Requires GRAMPS_BACKUP_DIR to be configured.
+        via object_counts. Returns {before, after, added}. An import that adds nothing —
+        an empty file, or content the object counts do not track — is reported as a
+        success with added=0 once the counts have held steady, not as a timeout. The
+        account must have OWNER role. Requires GRAMPS_BACKUP_DIR to be configured.
         """
         if not backup_dir:
             raise RuntimeError("GRAMPS_BACKUP_DIR is not configured; cannot import.")

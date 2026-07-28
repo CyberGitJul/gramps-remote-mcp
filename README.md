@@ -105,7 +105,9 @@ directory there so files survive and are reachable from the host:
 Export writes to that directory; for import, drop the file into the host
 directory first, then call `gramps_import_file("your-file.gramps")`. Completion
 of an import is confirmed by polling object counts (never the task endpoint), so
-it works on both synchronous and Celery-backed Gramps Web deployments.
+it works on both synchronous and Celery-backed Gramps Web deployments. An import
+that adds no objects still counts as done: once the counts have held steady for
+30 seconds it returns `added: 0` rather than timing out.
 
 ## Prerequisites
 
