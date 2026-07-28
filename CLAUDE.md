@@ -76,6 +76,32 @@ directly in a polling loop.
 **Tests are written first** and the suite is expected to stay green. The test-to-source ratio is
 deliberately high (~2.6:1); a new branch of behaviour without a test is incomplete.
 
+## Releasing a wave
+
+Features ship in numbered waves. The ritual is stable across releases and two of its steps have
+bitten this project before, so they are written down rather than rediscovered:
+
+1. **PR, always.** `main` is protected by the `protect-main` ruleset — no direct pushes. History
+   uses **merge commits**, not squash. Only the repo owner can merge.
+2. **Check the Dockerfile.** It copies an **explicit list** of modules, not `COPY . .`:
+   `COPY backup_store.py gramps_client.py gramps_blog.py server.py ./`. A new root-level module
+   that is not added to that line produces an image that builds fine and crashes on import. This
+   has shipped broken twice.
+3. **Check the README tool count.** The `## Tools` intro states a number that drifts every wave.
+   Verify it in the PR, not after:
+   ```bash
+   python -c "from unittest.mock import MagicMock; import server; \
+   print('off', len(server.create_server(MagicMock())[1]), \
+   'on', len(server.create_server(MagicMock(), enable_destructive=True)[1]))"
+   ```
+4. **Tag and release.** One **minor** bump per wave. There is deliberately no version string
+   anywhere in the repo — a release is an annotated tag plus a GitHub release, nothing to edit.
+5. **Build the image and smoke-test it** with the same off/on tool-count command as step 3, run
+   inside the container, plus an `import` of any new module.
+6. **Restart the MCP connection.** The client spawns the stdio container per session from
+   `:latest`, so a freshly built image does not take effect until the connection is restarted.
+   A stale container has previously looked like "the new tools are missing".
+
 ## Working notes
 
 `PROGRESS.md` at the repo root is the canonical resume anchor — current state, roadmap, next
