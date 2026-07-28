@@ -23,5 +23,15 @@ PROGRESS.md
 HANDOFF-*.md
 docs/Progress_archive.md
 
-# Claude Code local settings (personal, not committed)
-.claude/settings.local.json
+# Claude Code: share the project knowledge (rules, skills), keep the runtime state out.
+# Must be `.claude/*` rather than `.claude/` — git does not descend into an ignored
+# directory, so the negations below would never be evaluated.
+.claude/*
+!.claude/rules/
+!.claude/skills/
+.instance/
+
+# Coverage artifacts
+.coverage
+coverage.xml
+htmlcov/
