@@ -595,6 +595,36 @@ def test_gramps_delete_all_objects_requires_expected_count():
     client.delete_all_objects.assert_not_called()
 
 
+def test_gramps_delete_all_objects_confirm_must_be_literal_true():
+    # this tool empties the whole tree, so the docstring's "requires confirm=True"
+    # has to mean the literal True, not anything truthy: only that value proceeds.
+    # Every other truthy value must raise BEFORE the client is ever touched, so a
+    # refactor of `confirm is not True` to `if not confirm:` cannot silently start
+    # wiping the tree on confirm=1 / "yes" while the suite stays green — parallels
+    # test_delete_person_confirm_must_be_literal_true in tests/test_gramps_client.py.
+    client = MagicMock()
+    _, tools = create_server(client, enable_destructive=True)
+
+    for truthy in (1, "yes", "true", [1], {"ok": 1}):
+        with pytest.raises(ValueError):
+            tools["gramps_delete_all_objects"](confirm=truthy, expected_count=10)
+
+    client.delete_all_objects.assert_not_called()
+
+
+def test_gramps_delete_all_objects_accepts_expected_count_zero():
+    # expected_count=0 is a legitimate call: an already-empty tree. A falsy check
+    # (`if not expected_count:`) instead of `is None` would wrongly reject it, so
+    # pin that 0 reaches the client rather than being treated as "missing".
+    client = MagicMock()
+    client.delete_all_objects.return_value = {"before": {}, "after": {}, "deleted": {}}
+    _, tools = create_server(client, enable_destructive=True)
+
+    tools["gramps_delete_all_objects"](confirm=True, expected_count=0)
+
+    client.delete_all_objects.assert_called_once_with(expected_count=0)
+
+
 def test_tool_counts_are_27_off_and_31_on():
     # The README states these numbers and they drift every wave; fail here rather than
     # in review. Update both this test and README.md when a wave adds a tool.
