@@ -379,13 +379,16 @@ class GrampsClient(BlogMixin):
         403, 500, ...) still fails fast.
 
         Returns {before, after, deleted}; raises DeleteAllTimeoutError at the deadline,
-        carrying `before` and the last counts seen so a partial wipe is diagnosable. If
-        the POST is delivered (or waved through by the fallthrough above) but something
-        then goes wrong while confirming completion — a transient error from
+        carrying `before` and the last counts seen so a partial wipe is diagnosable — note
+        that this does not mean the delete definitely landed: a POST that was waved
+        through by the 502/503/504 fallthrough above may never have reached the server
+        at all, so the message does not tell the caller to avoid retrying, only to
+        re-read the counts first. If the POST is delivered (or waved through) but
+        something then goes wrong while confirming completion — a transient error from
         object_counts() itself — raises DeleteAllStateUnknownError instead, carrying
-        `before`: in that one case the delete was accepted but this call cannot tell the
-        caller what happened to their data, and gramps_get_object_counts must be
-        re-read before doing anything else.
+        `before`: in that one case the delete may have been accepted but this call
+        cannot tell the caller what happened to their data, and gramps_get_object_counts
+        must be re-read before doing anything else.
         """
         before = self.object_counts()
         if not before:
@@ -432,8 +435,10 @@ class GrampsClient(BlogMixin):
                 lambda cur, _elapsed: sum(cur.values()) == 0,
                 lambda last: DeleteAllTimeoutError(
                     f"Tree did not empty within {max_timeout}s; before={before}, last={last}. "
-                    "The delete was accepted and may still be running server-side; do not "
-                    "retry with a stale expected_count."
+                    "The delete may have been accepted and still be running server-side — or "
+                    "it may never have reached the server at all (e.g. a downed gateway). "
+                    "Re-read gramps_get_object_counts to see the tree's actual state before "
+                    "deciding whether expected_count is still valid to retry with."
                 ),
                 initial=before,
                 poll_interval=poll_interval,
@@ -448,17 +453,19 @@ class GrampsClient(BlogMixin):
             # unchanged rather than wrapping it in DeleteAllStateUnknownError below.
             raise
         except Exception as exc:
-            # Anything else here means the POST was accepted (or waved through above)
-            # but this call could not confirm what happened next — a transient 5xx from
+            # Anything else here means the POST was delivered (or waved through above,
+            # in which case it might not have reached the server at all) and then this
+            # call could not confirm what happened next — a transient 5xx from
             # /api/metadata/, a connection reset mid-poll, etc. That is the one state in
             # which the caller genuinely cannot tell what happened to their data, so it
             # must not escape bare: wrap it with `before` and point at the one source of
-            # truth this server trusts.
+            # truth this server trusts, without asserting acceptance this code cannot
+            # actually know.
             raise DeleteAllStateUnknownError(
-                f"The delete request was accepted, but the tree's state could not be "
-                f"confirmed afterwards ({type(exc).__name__}: {exc}); before={before}. "
+                f"The delete request may have been accepted, but the tree's state could "
+                f"not be confirmed afterwards ({type(exc).__name__}: {exc}); before={before}. "
                 "Call gramps_get_object_counts before doing anything else to find out "
-                "what actually happened."
+                "what actually happened, and decide from that whether a retry makes sense."
             ) from exc
         return {
             "before": before,

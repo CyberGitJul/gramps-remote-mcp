@@ -3576,6 +3576,34 @@ def test_delete_all_objects_confirms_from_counts_when_the_post_times_out(mock_po
 
 @patch("gramps_client.requests.request")
 @patch("gramps_client.requests.post")
+def test_delete_all_objects_connect_timeout_propagates_without_polling(mock_post, mock_request):
+    # requests.ConnectTimeout also subclasses requests.Timeout (like ReadTimeout does),
+    # but it means the TCP connection was never established — the request never reached
+    # the server, unlike a ReadTimeout, where it was sent and the server just didn't
+    # answer in time. Swallowing this the way ReadTimeout is swallowed would report a
+    # delete that never happened as "accepted and running". It must propagate, and the
+    # caller's expected_count is still valid to retry with — nothing was deleted.
+    import requests
+
+    mock_post.return_value = make_response({"access_token": "tok"})
+    before = {"people": 10, "families": 4}
+    mock_request.side_effect = [
+        _metadata(before),  # precondition read
+        requests.ConnectTimeout(),  # the delete POST never reaches the server
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(requests.ConnectTimeout):
+        client.delete_all_objects(
+            expected_count=14, stability_window=2, poll_interval=0, _sleep=lambda s: None
+        )
+
+    # Exactly the precondition read and the failed POST — no counts poll happened.
+    assert mock_request.call_count == 2
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
 def test_delete_all_objects_403_fails_fast_without_polling(mock_post, mock_request):
     # A 403 (e.g. an account without OWNER role) is about the request itself, not the
     # gateway, so it must propagate immediately as requests.HTTPError — not be treated
