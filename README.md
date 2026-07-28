@@ -13,9 +13,10 @@ record-count guards.
 
 ## Tools
 
-The server exposes 27 tools over the MCP **stdio** transport, plus 3 optional destructive
-tools (`gramps_delete_person`, `gramps_delete_family`, `gramps_delete_blog_post`) that are
-registered only when explicitly enabled — see [Destructive tools](#destructive-tools).
+The server exposes 27 tools over the MCP **stdio** transport, plus 4 optional destructive
+tools (`gramps_delete_person`, `gramps_delete_family`, `gramps_delete_blog_post`,
+`gramps_delete_all_objects`) that are registered only when explicitly enabled — see
+[Destructive tools](#destructive-tools).
 
 **Read**
 
@@ -77,9 +78,17 @@ clients never see them unless you opt in:
 | `gramps_delete_person(gramps_id, confirm)` | Permanently delete a person (for duplicates / erroneous entries). Requires `confirm=True` and guards that the people count drops by exactly one. Deleting a linked person unlinks them from their families (the slot is cleared) rather than cascading. Notes attached only to this person are cleaned up too (shared notes are kept); deleted note handles are returned as `deleted_notes`. |
 | `gramps_delete_family(family_id, confirm)` | Permanently delete a family — for cleaning up an orphaned/childless family left behind after re-homing its children. Requires `confirm=True`, refuses if the family still has children (remove them first), and guards that the family count drops by exactly one. |
 | `gramps_delete_blog_post(gramps_id, confirm)` | Permanently delete a blog post. Requires `confirm=True`. Removes the Source and cleans up its body note if now orphaned (shared notes are kept); guards that the source count drops by exactly one. |
+| `gramps_delete_all_objects(confirm, expected_count)` | Permanently delete **every** object in the tree — people, families, events, places, sources, citations, repositories, media, notes and tags. Requires `confirm=True` **and** `expected_count` equal to the tree's current total object count, so nothing is deleted unless the caller has counted the tree first. Returns `{before, after, deleted}`. Requires OWNER role. |
 
 To enable it, set `GRAMPS_ENABLE_DESTRUCTIVE=1` in the server's environment; the account
 also needs delete rights on the tree. Leave it unset for a read/edit-only deployment.
+
+**Wiping the tree.** `gramps_delete_all_objects` is the one irreversible operation here, and
+it takes two arguments rather than one: `confirm=True` plus `expected_count`, the tree's
+current total object count (call `gramps_get_object_counts` and sum it). A mismatch aborts
+before anything is deleted, which makes "count it, then destroy it" the only way to express
+the call. There is no undo — run `gramps_export_tree` first; that backup file is the way back.
+Together with `gramps_import_file` it makes a full reset three calls: export, wipe, import.
 
 ### Backup / Restore
 
