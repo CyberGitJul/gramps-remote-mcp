@@ -20,3 +20,16 @@ jobs:
         run: ruff check --output-format=github .
       - name: Format check (ruff format --check)
         run: ruff format --check .
+
+  tests:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run test suite
+        run: pytest -q

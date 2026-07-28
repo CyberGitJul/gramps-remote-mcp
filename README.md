@@ -13,7 +13,7 @@ record-count guards.
 
 ## Tools
 
-The server exposes 25 tools over the MCP **stdio** transport, plus 3 optional destructive
+The server exposes 27 tools over the MCP **stdio** transport, plus 3 optional destructive
 tools (`gramps_delete_person`, `gramps_delete_family`, `gramps_delete_blog_post`) that are
 registered only when explicitly enabled — see [Destructive tools](#destructive-tools).
 
