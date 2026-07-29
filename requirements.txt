@@ -1,2 +1,7 @@
-mcp>=1.2.0
+# Upper bound is load-bearing: mcp 2.0.0 (2026-07-29) removed mcp.server.fastmcp
+# entirely, which server.py imports. Its successor is mcp.server.mcpserver.MCPServer
+# — a real port, not a rename. Without the bound, `docker build` silently produces an
+# image that crashes on import. Migration is tracked as its own wave; raise this
+# bound only together with that port.
+mcp>=1.2.0,<2
 requests>=2.31.0

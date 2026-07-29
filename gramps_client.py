@@ -950,8 +950,13 @@ class GrampsClient(BlogMixin):
         only to that owner is now orphaned and would otherwise clutter the tree and
         inflate the notes count. A note is orphaned iff its `backlinks` are empty;
         notes still referenced elsewhere (shared) are left untouched. Best-effort
-        and idempotent — a per-note failure is skipped, never raised, because the
-        owner is already gone by the time this runs. Returns the deleted handles.
+        and idempotent — a per-note REQUEST failure is skipped, never raised, because
+        the owner is already gone by the time this runs and the caller's delete has
+        already succeeded. That covers transport failures (connection reset, timeout)
+        as well as HTTP status errors: neither is worth surfacing as an exception when
+        the only consequence is one note left behind. A failure that is NOT a failed
+        request (a broken response contract, say) still propagates — that is a bug, not
+        a flaky note. Returns the deleted handles.
         """
         deleted = []
         for handle in note_handles:
@@ -960,7 +965,7 @@ class GrampsClient(BlogMixin):
                 if not note.get("backlinks"):
                     self._request("DELETE", f"/api/notes/{handle}")
                     deleted.append(handle)
-            except requests.HTTPError:
+            except requests.RequestException:
                 continue
         return deleted
 
