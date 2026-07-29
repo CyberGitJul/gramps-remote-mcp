@@ -3913,15 +3913,65 @@ def test_login_honours_a_short_retry_after_header(mock_post):
 def test_login_fails_fast_when_retry_after_exceeds_the_cap(mock_post):
     # Parking an MCP tool call for minutes is worse than telling the caller the truth now:
     # a wait that long is not the 1/second limit this retry exists for.
-    mock_post.side_effect = [_rate_limited_response(retry_after=str(TOKEN_RETRY_MAX_WAIT + 1))]
+    mock_post.side_effect = [_rate_limited_response(retry_after="30")]
     slept = _RecordingSleep()
     client = GrampsClient("https://example.test", "bot", "secret", _sleep=slept)
 
-    with pytest.raises(TokenRateLimitError):
+    with pytest.raises(TokenRateLimitError) as excinfo:
         client._login()
 
     assert mock_post.call_count == 1
     assert slept.waits == []
+    message = str(excinfo.value)
+    # The message is API surface: an LLM acts on it. In THIS branch no retry happened and
+    # the limit is not the 1/second one, so it must not claim either -- telling the caller
+    # to "wait a second or two" against a 30s window just makes them loop.
+    assert "after a retry" not in message
+    assert "30" in message  # the wait the caller actually has to sit out
+    assert str(TOKEN_RETRY_MAX_WAIT) in message  # and the cap that made us refuse it
+
+
+@patch("gramps_client.requests.post")
+def test_the_retry_wait_clears_the_servers_one_second_window(mock_post):
+    # The one property that makes the retry work, asserted against a literal rather than
+    # against the constant it is checking: the limiter is a fixed window anchored on the
+    # last ACCEPTED login, so a wait of 1.0 or less lands inside the same window and
+    # earns a second 429. Comparing slept.waits to the imported TOKEN_RETRY_WAIT cannot
+    # catch that -- the assertion moves with the mutation.
+    assert TOKEN_RETRY_WAIT > 1.0
+
+    mock_post.side_effect = [_rate_limited_response(), make_response({"access_token": "tok"})]
+    slept = _RecordingSleep()
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=slept)
+
+    client._login()
+
+    assert slept.waits == [1.1]
+    assert slept.waits[0] > 1.0
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_orphan_cleanup_stops_at_a_rate_limited_login_instead_of_retrying_per_note(
+    mock_post, mock_request
+):
+    # _delete_orphaned_notes skips a failed note and carries on, which is right for a
+    # per-note transport hiccup and wrong for a rate-limited login: that is client-wide,
+    # so no later note can succeed either. Without this the retry AMPLIFIES -- every note
+    # re-enters _login for two more token POSTs and another real wait, hammering the
+    # endpoint the retry exists to be polite to, while the caller watches the tool hang.
+    mock_post.side_effect = chain([_rate_limited_response()], repeat(_rate_limited_response()))
+    mock_request.side_effect = repeat(make_response(None, 401))  # every note: token expired
+    slept = _RecordingSleep()
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=slept)
+    client._access_token = "expired"  # warm session, so no lazy login precedes the loop
+
+    deleted = client._delete_orphaned_notes(["n1", "n2", "n3", "n4", "n5"])
+
+    assert deleted == []
+    # one relogin attempt for the whole loop (two POSTs: the try and its retry), not per note
+    assert mock_post.call_count == 2
+    assert slept.waits == [1.1]
 
 
 @patch("gramps_client.requests.post")

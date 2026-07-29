@@ -123,6 +123,24 @@ _DATE_MODIFIERS = {
 }
 
 
+def _advertised_retry_after(resp):
+    """The response's Retry-After in seconds, or None if it did not state a usable one."""
+    headers = getattr(resp, "headers", None)
+    raw = headers.get("Retry-After") if hasattr(headers, "get") else None
+    # The isinstance(str) check is not defensive noise. Real header values are always str
+    # — note that requests' headers are a CaseInsensitiveDict, not a dict, so the container
+    # type cannot be tested for — while a MagicMock header coerces through float() to a
+    # silent 1.0, which would make a test look like it exercised this branch when it did not.
+    if not isinstance(raw, str):
+        return None
+    try:
+        advertised = float(raw.strip())
+    except ValueError:
+        # HTTP-date form, or junk. Not worth parsing for a one-second window.
+        return None
+    return advertised if advertised > 0 else None
+
+
 def _token_retry_wait(resp):
     """Seconds to wait before retrying a rate-limited login, or None to not retry at all.
 
@@ -131,22 +149,41 @@ def _token_retry_wait(resp):
     1/second regardless of what it chose to say. A stated delay above TOKEN_RETRY_MAX_WAIT
     is not waited out at all: that is a different limit than the one this retry exists for.
     """
-    headers = getattr(resp, "headers", None)
-    raw = headers.get("Retry-After") if hasattr(headers, "get") else None
-    # The isinstance(str) check is not defensive noise. Real header values are always str
-    # — note that requests' headers are a CaseInsensitiveDict, not a dict, so the container
-    # type cannot be tested for — while a MagicMock header coerces through float() to a
-    # silent 1.0, which would make a test look like it exercised this branch when it did not.
-    if not isinstance(raw, str):
+    advertised = _advertised_retry_after(resp)
+    if advertised is None:
         return TOKEN_RETRY_WAIT
-    try:
-        wait = float(raw.strip())
-    except ValueError:
-        # HTTP-date form, or junk. Not worth parsing for a one-second window.
-        return TOKEN_RETRY_WAIT
-    if wait <= 0:
-        return TOKEN_RETRY_WAIT
-    return wait if wait <= TOKEN_RETRY_MAX_WAIT else None
+    return advertised if advertised <= TOKEN_RETRY_MAX_WAIT else None
+
+
+def _rate_limit_message(resp):
+    """Explain a 429 from POST /api/token/ truthfully for the branch that produced it.
+
+    Two branches raise, and they need different words. The usual one has already waited
+    out one window and been refused again. The other never retried at all, because
+    something in front of Gramps Web asked for a wait this client will not block an MCP
+    call for — telling that caller to "wait a second or two" against a 30s window would
+    just make them loop. Error text is API surface here: an LLM acts on it.
+    """
+    advertised = _advertised_retry_after(resp)
+    if advertised is not None and advertised > TOKEN_RETRY_MAX_WAIT:
+        return (
+            f"Logins are being rate-limited: POST /api/token/ answered 429 and asked for a "
+            f"wait of {advertised}s. That is longer than the {TOKEN_RETRY_MAX_WAIT}s this "
+            "client will block an MCP call for, so the login was NOT retried — and it is a "
+            "longer limit than Gramps Web's own 1-per-second on this endpoint, so something "
+            "in front of it is limiting too. Only the login failed: the single request it "
+            "was needed for was never sent. That says nothing about what the surrounding "
+            f"operation had already done, so wait at least {advertised}s and re-read the "
+            "state before retrying anything that writes."
+        )
+    return (
+        "Gramps Web is rate-limiting logins: POST /api/token/ answered 429 and was still "
+        "limiting after a retry. The server allows one login per second per source IP, and "
+        "that budget is shared with every other client behind the same address. Only the "
+        "login failed: the single request it was needed for was never sent. That says "
+        "nothing about what the surrounding operation had already done, so wait a second "
+        "or two and re-read the state before retrying anything that writes."
+    )
 
 
 def _build_date(year, quality, year_to=None):
@@ -288,16 +325,7 @@ class GrampsClient(BlogMixin):
                 if wait is not None:
                     self._sleep(wait)
                     continue
-                raise TokenRateLimitError(
-                    "Gramps Web is rate-limiting logins: POST /api/token/ answered 429 and "
-                    "was still limiting after a retry. The server allows one login per "
-                    "second per source IP, and that budget is shared with every other "
-                    "client behind the same address. Only the login failed — the single "
-                    "request it was needed for was never sent. That says nothing about "
-                    "what the surrounding operation had already done, so wait a second or "
-                    "two and re-read the state before retrying anything that writes.",
-                    response=resp,
-                )
+                raise TokenRateLimitError(_rate_limit_message(resp), response=resp)
             resp.raise_for_status()
             self._access_token = resp.json()["access_token"]
             self._token_mints += 1
@@ -1067,7 +1095,8 @@ class GrampsClient(BlogMixin):
         as well as HTTP status errors: neither is worth surfacing as an exception when
         the only consequence is one note left behind. A failure that is NOT a failed
         request (a broken response contract, say) still propagates — that is a bug, not
-        a flaky note. Returns the deleted handles.
+        a flaky note. A rate-limited login is the one failure that stops the loop instead
+        of skipping one note; see below. Returns the deleted handles.
         """
         deleted = []
         for handle in note_handles:
@@ -1076,6 +1105,15 @@ class GrampsClient(BlogMixin):
                 if not note.get("backlinks"):
                     self._request("DELETE", f"/api/notes/{handle}")
                     deleted.append(handle)
+            except TokenRateLimitError:
+                # Client-wide, not per-note: the login budget is spent for every client
+                # behind this IP, so no later note can succeed either. Skipping onwards
+                # would re-enter _login once per note — two token POSTs and a real wait
+                # each — which hammers the very endpoint the retry exists to be polite to
+                # and blocks the single-threaded stdio server for seconds, all to fail
+                # anyway. Stop and report what did get deleted; leftover notes are the
+                # documented outcome of this best-effort pass.
+                break
             except requests.RequestException:
                 continue
         return deleted
