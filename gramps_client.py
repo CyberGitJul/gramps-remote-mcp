@@ -67,6 +67,34 @@ class DeleteAllStateUnknownError(Exception):
     pass
 
 
+class TokenRateLimitError(requests.HTTPError):
+    """POST /api/token/ was still rate-limited after retrying.
+
+    Subclasses requests.HTTPError on purpose: every existing handler that inspects
+    exc.response.status_code — delete_all_objects' 502/503/504 fallthrough, for one —
+    keeps working unchanged; only the message improves.
+    """
+
+
+# POST /api/token/ is rate-limited server-side to 1/second, keyed by source IP
+# (gramps_webapi/api/resources/token.py: @limiter.limit("1/second") with
+# key_func=get_remote_address), so every client behind the same address shares one budget:
+# a second MCP session, a browser tab, this client's own relogin. The window is a
+# non-elastic fixed window anchored on the last ACCEPTED login, so a wait of just over a
+# second always clears it; hammering does not push it further out.
+TOKEN_RETRY_WAIT = 1.1
+# One retry, i.e. two attempts. That covers the whole self-inflicted class plus a single
+# lost race with another client on the same IP. More attempts would mostly be a slower way
+# to fail, and re-authenticating in a loop is exactly what a brute-force guard in front of
+# a deployment is watching for.
+TOKEN_RETRY_ATTEMPTS = 1
+# Gramps Web sends no Retry-After (flask-limiter emits it only with
+# RATELIMIT_HEADERS_ENABLED, which the shipped deployment does not set), so TOKEN_RETRY_WAIT
+# is the normal answer. A deployment that does send one is believed, but only up to this
+# cap: a longer window is not the 1/second limit this retry exists for, and parking an MCP
+# tool call for minutes is worse than telling the caller the truth now.
+TOKEN_RETRY_MAX_WAIT = 5.0
+
 EXPORT_TIMEOUT = 300
 IMPORT_HTTP_TIMEOUT = 300
 IMPORT_POLL_INTERVAL = 2.0
@@ -93,6 +121,32 @@ _DATE_MODIFIERS = {
     "estimated": 0,
     "between": 4,
 }
+
+
+def _token_retry_wait(resp):
+    """Seconds to wait before retrying a rate-limited login, or None to not retry at all.
+
+    Falls back to TOKEN_RETRY_WAIT whenever the server does not state a usable delay — no
+    header, the HTTP-date form, a nonsense value — because the documented server limit is
+    1/second regardless of what it chose to say. A stated delay above TOKEN_RETRY_MAX_WAIT
+    is not waited out at all: that is a different limit than the one this retry exists for.
+    """
+    headers = getattr(resp, "headers", None)
+    raw = headers.get("Retry-After") if hasattr(headers, "get") else None
+    # The isinstance(str) check is not defensive noise. Real header values are always str
+    # — note that requests' headers are a CaseInsensitiveDict, not a dict, so the container
+    # type cannot be tested for — while a MagicMock header coerces through float() to a
+    # silent 1.0, which would make a test look like it exercised this branch when it did not.
+    if not isinstance(raw, str):
+        return TOKEN_RETRY_WAIT
+    try:
+        wait = float(raw.strip())
+    except ValueError:
+        # HTTP-date form, or junk. Not worth parsing for a one-second window.
+        return TOKEN_RETRY_WAIT
+    if wait <= 0:
+        return TOKEN_RETRY_WAIT
+    return wait if wait <= TOKEN_RETRY_MAX_WAIT else None
 
 
 def _build_date(year, quality, year_to=None):
@@ -190,23 +244,64 @@ def _first_name_mutation(first_name):
 
 
 class GrampsClient(BlogMixin):
-    def __init__(self, base_url, username, password, blog_body_format=None):
+    def __init__(self, base_url, username, password, blog_body_format=None, _sleep=time.sleep):
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
         self._access_token = None
+        # Successful /api/token/ mints. Only ever compared against a snapshot of itself
+        # (delete_all_objects), i.e. a "did a login happen in between" marker, not a metric.
+        self._token_mints = 0
+        # Injected so the rate-limit wait in _login costs no wall-clock time in tests. This
+        # one is a constructor seam rather than a per-call parameter like _wait_for_counts'
+        # _sleep: _login is reached from every tool through _authed_request, none of which
+        # take time arguments, and threading it through all of them would be a far bigger
+        # change than the fix it serves.
+        self._sleep = _sleep
         # Fail-safe (like GRAMPS_ENABLE_DESTRUCTIVE): only the exact string "html"
         # enables HTML bodies; anything else falls back to safe plain text.
         self.blog_body_format = "html" if blog_body_format == "html" else "text"
 
     def _login(self):
-        resp = requests.post(
-            f"{self.base_url}/api/token/",
-            json={"username": self.username, "password": self.password},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        self._access_token = resp.json()["access_token"]
+        """Mint a fresh access token, waiting out one server-side rate limit if needed.
+
+        Gramps Web allows POST /api/token/ only once per second per source IP, and that
+        budget is shared with every other client behind the same address. A 429 here is a
+        pacing problem, not an authentication problem, so it is waited out once instead of
+        being reported as a failed login; if it survives the retry it becomes
+        TokenRateLimitError, which says so in words. Every other status still fails
+        immediately and unretried — a 403 means the credentials are wrong, and retrying
+        those is both useless and exactly what a brute-force guard counts.
+
+        Tokens minted here carry fresh=True as a boolean claim, so they never stop
+        satisfying a FreshProtectedResource while they are valid; nothing needs to relogin
+        merely because a token is a few seconds old.
+        """
+        for attempt in range(TOKEN_RETRY_ATTEMPTS + 1):
+            resp = requests.post(
+                f"{self.base_url}/api/token/",
+                json={"username": self.username, "password": self.password},
+                timeout=10,
+            )
+            if resp.status_code == 429:
+                wait = _token_retry_wait(resp) if attempt < TOKEN_RETRY_ATTEMPTS else None
+                if wait is not None:
+                    self._sleep(wait)
+                    continue
+                raise TokenRateLimitError(
+                    "Gramps Web is rate-limiting logins: POST /api/token/ answered 429 and "
+                    "was still limiting after a retry. The server allows one login per "
+                    "second per source IP, and that budget is shared with every other "
+                    "client behind the same address. Only the login failed — the single "
+                    "request it was needed for was never sent. That says nothing about "
+                    "what the surrounding operation had already done, so wait a second or "
+                    "two and re-read the state before retrying anything that writes.",
+                    response=resp,
+                )
+            resp.raise_for_status()
+            self._access_token = resp.json()["access_token"]
+            self._token_mints += 1
+            return
 
     def _authed_request(self, method, path, *, timeout, extra_headers=None, **body_kwargs):
         """Send an authenticated request, retrying once through a fresh login on 401.
@@ -365,9 +460,17 @@ class GrampsClient(BlogMixin):
         server owns the deletion order, referential integrity, the default_person reset
         and the search reindex, and answers 200 (sync) or 202 (Celery) alike.
 
-        A fresh login is forced first: the endpoint is a FreshProtectedResource and
-        accepts only tokens minted by /api/token/, so a long-lived session must not
-        present whatever token it happens to be holding. The POST carries a long
+        The endpoint is a FreshProtectedResource, so a login is placed immediately before
+        the POST — but only if the precondition read above did not already perform one.
+        "Fresh" is a boolean JWT claim rather than a time window (POST /api/token/ mints
+        with fresh=true and the check never consults a clock), so a token this call minted
+        milliseconds ago is already exactly what another login would produce; asking for a
+        second one is pure cost, and /api/token/ is rate-limited to one request per second
+        per source IP, which used to make that second mint 429 and kill the wipe before it
+        started. On a session that arrived holding an older token the login does happen,
+        and it is worth its mint: Gramps Web checks whether the tree has been disabled
+        only at login, never per request, so this is the last point at which the
+        deployment can still refuse. The POST carries a long
         timeout — a synchronous deployment answers only once the wipe, including a full
         search reindex, has finished. If it still times out on the read (the request was
         nonetheless delivered — a ConnectTimeout, meaning the connection never even
@@ -390,6 +493,7 @@ class GrampsClient(BlogMixin):
         cannot tell the caller what happened to their data, and gramps_get_object_counts
         must be re-read before doing anything else.
         """
+        mints_before = self._token_mints
         before = self.object_counts()
         if not before:
             raise DeleteAllCountMismatchError(
@@ -402,7 +506,14 @@ class GrampsClient(BlogMixin):
                 f"expected_count={expected_count} does not match the live total "
                 f"{before_total}; nothing was deleted. Counts: {before}"
             )
-        self._login()
+        if self._token_mints == mints_before:
+            # The counts read above reused a token this call did not mint, so it may be
+            # arbitrarily old: mint the one the FreshProtectedResource wants, and take the
+            # is_tree_disabled recheck that only a login performs. If that read *did* mint
+            # one — a cold client, or a relogin after a 401 — the token in hand is already
+            # what another login would produce, and asking for a second inside the same
+            # second is precisely what the server's 1/second limit rejects.
+            self._login()
         try:
             self._authed_request("POST", "/api/objects/delete/", timeout=DELETE_ALL_HTTP_TIMEOUT)
         except requests.ReadTimeout:
