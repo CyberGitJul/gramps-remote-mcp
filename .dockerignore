@@ -1,4 +1,18 @@
 tests/
-.env
+
+# Credentials never belong in the build context. The bare name `.env` was not
+# enough: .gitignore excludes `.env*`, so sibling files like `.env.int` exist
+# locally with real credentials and were being handed to the Docker daemon. The
+# Dockerfile COPYs an explicit file list, so this was never an image leak — but
+# the build context is the wrong place for them regardless.
+.env*
+!.env.example
+
+# ~100 MB of virtualenv and history, uploaded on every build for an image that
+# needs requirements.txt plus four .py files.
+.venv/
+.git/
+.github/
+
 __pycache__/
 *.pyc
