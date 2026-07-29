@@ -2614,6 +2614,80 @@ def test_delete_person_keeps_shared_note(mock_post, mock_request):
     assert mock_request.call_count == 5  # no DELETE issued for the shared note
 
 
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_orphan_cleanup_survives_transport_error_on_lookup(mock_post, mock_request):
+    # the owner is ALREADY deleted by the time cleanup runs, so a transport-level
+    # failure (no HTTP status at all) while looking a note up must be skipped just
+    # like an HTTP error is — never raised at a caller whose delete succeeded.
+    import requests
+
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {"gramps_id": "I0649", "handle": "h_p", "note_list": ["h_note1", "h_note2"]}
+    mock_request.side_effect = [
+        make_response([person]),  # get_person
+        make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0649"}]),  # before: 2
+        make_response([{"type": "delete", "handle": "h_p", "_class": "Person"}]),  # DELETE person
+        make_response([{"gramps_id": "I0001"}]),  # after: 1
+        requests.ConnectionError("connection reset by peer"),  # GET note 1 -> transport failure
+        make_response({"handle": "h_note2", "backlinks": {}}),  # GET note 2 -> orphaned
+        make_response([{"type": "delete", "handle": "h_note2", "_class": "Note"}]),  # DELETE note 2
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.delete_person("I0649", confirm=True)
+
+    assert result["deleted"] is True
+    # idempotent and best-effort: note 1 is skipped, the loop still reaches note 2
+    assert result["deleted_notes"] == ["h_note2"]
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_orphan_cleanup_survives_transport_error_on_delete(mock_post, mock_request):
+    # same guarantee for the second statement in the try: the note is confirmed
+    # orphaned, but the DELETE itself times out. Still skipped, never raised.
+    import requests
+
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {"gramps_id": "I0649", "handle": "h_p", "note_list": ["h_note1"]}
+    mock_request.side_effect = [
+        make_response([person]),  # get_person
+        make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0649"}]),  # before: 2
+        make_response([{"type": "delete", "handle": "h_p", "_class": "Person"}]),  # DELETE person
+        make_response([{"gramps_id": "I0001"}]),  # after: 1
+        make_response({"handle": "h_note1", "backlinks": {}}),  # GET note -> orphaned
+        requests.ReadTimeout("timed out"),  # DELETE note -> transport failure
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.delete_person("I0649", confirm=True)
+
+    assert result["deleted"] is True
+    assert result["deleted_notes"] == []  # not reported as deleted — it wasn't
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_orphan_cleanup_does_not_swallow_non_request_errors(mock_post, mock_request):
+    # the best-effort catch covers FAILED REQUESTS, not bugs. Widening it to a bare
+    # `except Exception` would hide a broken response contract behind a clean-looking
+    # success; this pins that such an error still surfaces.
+    mock_post.return_value = make_response({"access_token": "tok123"})
+    person = {"gramps_id": "I0649", "handle": "h_p", "note_list": ["h_note1"]}
+    mock_request.side_effect = [
+        make_response([person]),  # get_person
+        make_response([{"gramps_id": "I0001"}, {"gramps_id": "I0649"}]),  # before: 2
+        make_response([{"type": "delete", "handle": "h_p", "_class": "Person"}]),  # DELETE person
+        make_response([{"gramps_id": "I0001"}]),  # after: 1
+        make_response([{"handle": "h_note1"}]),  # GET note -> a LIST, not the expected object
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    with pytest.raises(AttributeError):
+        client.delete_person("I0649", confirm=True)
+
+
 # --- delete_family (G10, DESTRUCTIVE) ---
 
 from gramps_client import FamilyDeleteCountMismatchError, FamilyNotEmptyError
