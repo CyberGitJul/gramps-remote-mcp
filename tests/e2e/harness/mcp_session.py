@@ -4,6 +4,11 @@ Deliberately raw rather than the `mcp` client library: the suite must observe wh
 wire actually carries — `structuredContent` presence, `nextCursor`, and the fact that a
 gated-off tool answers with a *successful* result carrying `isError: true` (D20). A
 client library normalises exactly those details away.
+
+It speaks the protocol over a process it is *handed* and never starts one. Choosing the
+image, wiring mounts and env, and getting the container removed again is `mcp_container.py`;
+keeping the two apart is what lets the framing be tested against a plain pipe (see
+`test_00_mcp_session.py`) instead of only against a live container.
 """
 
 from __future__ import annotations
@@ -16,10 +21,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from .docker_util import ProbeError, assert_ours
-from .runid import label_args
-
-DEFAULT_IMAGE = "gramps-remote-mcp:latest"
+from .docker_util import ProbeError
 
 
 @dataclass
@@ -39,40 +41,12 @@ class ToolResult:
 
 
 class McpSession:
-    """One stdio session against `docker run -i <image>`, as the real client spawns it."""
+    """One stdio session over an already-running server process."""
 
     PROTOCOL_VERSION = "2025-06-18"
 
-    def __init__(
-        self,
-        name: str,
-        image: str,
-        env: dict[str, str],
-        *,
-        network: str | None = None,
-        mounts: tuple[tuple[str, str], ...] = (),
-        runid: str | None = None,
-    ) -> None:
-        self.name = assert_ours(name)
-        args = ["docker", "run", "--rm", "-i", "--name", self.name]
-        if runid:
-            args += label_args(runid)
-        if network:
-            args += ["--network", network]
-        for host_path, container_path in mounts:
-            args += ["-v", f"{host_path}:{container_path}"]
-        for key, value in env.items():
-            args += ["-e", f"{key}={value}"]
-        args.append(image)
-
-        self._proc = subprocess.Popen(
-            args,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-        )
+    def __init__(self, proc: subprocess.Popen[str]) -> None:
+        self._proc = proc
         self._next_id = 0
         self._lines: queue.Queue[str] = queue.Queue()
         self.stderr: list[str] = []

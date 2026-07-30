@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from .docker_util import INT_CONTAINERS, NAME_PREFIX, ProbeError, docker
+from .docker_util import E2E_IMAGE_GLOB, INT_CONTAINERS, NAME_PREFIX, ProbeError, docker
 from .runid import LABEL_KEY
 
 LIVE_RUN_GRACE_MIN = 60
@@ -149,7 +149,7 @@ def reap(*, force: bool = False, grace_min: int = LIVE_RUN_GRACE_MIN) -> dict[st
     for line in docker(
         "images",
         "--filter",
-        "reference=gramps-remote-mcp:e2e-*",
+        f"reference={E2E_IMAGE_GLOB}",
         "--format",
         "{{.Repository}}:{{.Tag}}",
         check=False,

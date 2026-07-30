@@ -37,7 +37,7 @@ import measure_controls  # noqa: E402
 import measure_unknowns  # noqa: E402
 from harness import docker_util as du  # noqa: E402
 from harness import gramps_instance as gi  # noqa: E402
-from harness.mcp_session import McpSession  # noqa: E402
+from harness.mcp_container import McpContainer, container_name  # noqa: E402
 from harness.rest import GrampsRest  # noqa: E402
 
 MCP_IMAGE_DEFAULT = "gramps-remote-mcp:latest"
@@ -53,7 +53,7 @@ class BringUpProbe:
         self.runid = uuid.uuid4().hex[:8]
         self.observed: dict[str, Any] = {}
         self.instances: list[gi.GrampsInstance] = []
-        self.sessions: list[McpSession] = []
+        self.sessions: list[McpContainer] = []
         self.fixture = Path(args.fixture)
         self.backup_dir = Path(args.artifacts) / f"run-{self.runid}" / "backup"
 
@@ -75,7 +75,7 @@ class BringUpProbe:
             label: str = "",
             user: str = gi.OWNER_USER,
             password: str = gi.OWNER_PW,
-        ) -> McpSession:
+        ) -> McpContainer:
             env = {
                 "GRAMPS_BASE_URL": instance.internal_url,
                 "GRAMPS_USERNAME": user,
@@ -84,15 +84,15 @@ class BringUpProbe:
             }
             if destructive:
                 env["GRAMPS_ENABLE_DESTRUCTIVE"] = "1"
-            session = McpSession(
-                f"{du.NAME_PREFIX}{self.runid}-mcp{label}-{len(self.sessions)}",
+            session = McpContainer(
+                container_name(self.runid, f"{label.strip('-') or 'probe'}-{len(self.sessions)}"),
                 self.args.mcp_image,
                 env,
                 network=instance.network,
                 mounts=((str(self.backup_dir), "/data"),),
                 runid=self.runid,
             )
-            session.initialize()
+            session.start()
             self.sessions.append(session)
             return session
 

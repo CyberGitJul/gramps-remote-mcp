@@ -16,27 +16,50 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `harness/docker_util.py` | subprocess/Docker plumbing and the INT tripwires |
 | `harness/gramps_instance.py` | disposable Gramps Web + Redis on its own network (D6, D14) |
 | `harness/rest.py` | the REST oracle — the only way the suite observes tree state (D3, D22) |
-| `harness/mcp_session.py` | raw JSON-RPC stdio driver against the shipped image (D21) |
+| `harness/mcp_session.py` | raw JSON-RPC framing over a process it is handed (D21) |
+| `harness/mcp_container.py` | which image, wired how, reused across calls, gone afterwards (D8) |
 | `harness/runid.py` | run identity, Docker labels, artifact dirs |
 | `harness/reaper.py` | reaps leftovers without killing a live run (D18) |
 | `harness/token_audit.py` | counts token POSTs per client IP from the access log (D15) |
 | `probes/probe_bringup.py` | the one bring-up probe (D10) |
 | `probes/observed.json` | its committed answers — **the** platform reference |
-| `conftest.py` | stamps the `e2e` marker (D1); fails the run on a leaked instance |
-| `test_00_*.py`, `test_02_token_audit.py` | Docker-free: gate, reaper guards, teardown bookkeeping, log parser |
+| `stubs/fake_mcp_server.py` | a rude stdio server, so the framing is testable without Docker |
+| `conftest.py` | stamps the `e2e` marker (D1); resolves the image; fails the run on a leak |
+| `test_00_*.py`, `test_02_token_audit.py` | Docker-free: gate, reaper guards, teardown bookkeeping, framing, image legs, log parser |
 | `test_01_instance.py` | T1.3 acceptance: two bring-ups, nothing left behind, INT untouched |
 | `test_03_rest_oracle.py` | T1.4: snapshot/fingerprint, and `put_merge` preserving what it does not touch |
+| `test_04_mcp_container.py` | T1.5 acceptance: handshake, `off 27 / on 31`, reuse, verified removal |
 
 Phase 0 created the probe and the harness skeleton; T1.1 added the gate, T1.2 the reaper, T1.3
-the restartable instance and T1.4 the oracle plus the token audit. The canonical fixture, the
-reset and `assertions.py` are the rest of Phase 1.
+the restartable instance, T1.4 the oracle plus the token audit and T1.5 the container. The
+canonical fixture, the reset and `assertions.py` are the rest of Phase 1.
+
+### Which image is under test (D8)
+
+Two legs, because they answer different questions. **Working tree** (the default, so a local or
+PR run tests the branch): builds `gramps-remote-mcp:e2e-<runid>` from the repo root — the only
+thing that catches a new root module missing from the Dockerfile's explicit `COPY` list, which
+has shipped broken twice. **Released**: runs the shipped artifact, which is what the release
+ritual and the nightly want.
+
+```bash
+pytest -q -m e2e                                     # working tree, built once per session
+GRAMPS_E2E_IMAGE_LEG=released pytest -q -m e2e       # the artifact: gramps-remote-mcp:latest
+GRAMPS_E2E_IMAGE_LEG=released GRAMPS_E2E_IMAGE=gramps-remote-mcp:v0.5.1 pytest -q -m e2e
+```
+
+A misspelt leg stops the run instead of falling back — a silent fallback to `:latest` is the
+stale-image failure mode, and a stale `:latest` has already once looked exactly like "the new
+tools are missing". Containers are then started **by image id**, not by tag: a concurrent run's
+reaper sweeps `gramps-remote-mcp:e2e-*` by name and the release ritual re-points `:latest` by
+hand, so a tag can move out from under a run in flight. The resolved id is what gets recorded.
 
 ## Running it
 
 ```bash
 pytest -q                       # unit suite only: 259 passed, e2e deselected, no Docker
-pytest -q -m e2e                # all 27 e2e tests, ~40 s (four of them need Docker)
-pytest -q -m e2e -k "gate or reaper or teardown or token_audit"   # Docker-free subset, <1 s
+pytest -q -m e2e                # all 55 e2e tests, ~46 s (nine of them need Docker)
+pytest -q -m e2e tests/e2e/test_00_*.py tests/e2e/test_02_token_audit.py  # no Docker, ~2 s
 pytest --e2e-reap-only          # reap stale gwe2e-* resources, prune artifact dirs, exit
 pytest --e2e-reap-only --e2e-force --e2e-keep-runs=1   # also remove a *running* instance
 

@@ -15,6 +15,12 @@ from typing import Any
 
 NAME_PREFIX = "gwe2e-"
 
+# The per-run image built from the working tree (plan D8). The prefix lives here rather than
+# in `mcp_container.py` because the reaper globs for it: if the two ever disagree, every run
+# leaks an image and nothing says so.
+E2E_IMAGE_PREFIX = "gramps-remote-mcp:e2e-"
+E2E_IMAGE_GLOB = f"{E2E_IMAGE_PREFIX}*"
+
 # The INT instance. Named explicitly so "don't touch it" is a check, not a convention.
 INT_CONTAINERS = ("gramps-grampsweb-1", "grampsweb_celery", "grampsweb_redis")
 INT_PORT = 5055

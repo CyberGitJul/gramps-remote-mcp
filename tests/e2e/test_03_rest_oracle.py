@@ -10,9 +10,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
-from harness.docker_util import NAME_PREFIX
 from harness.gramps_instance import OWNER_PW, OWNER_USER, ROLE_OWNER, GrampsInstance
-from harness.mcp_session import DEFAULT_IMAGE, McpSession
+from harness.mcp_container import ImageRef, McpContainer, container_name
 from harness.rest import GrampsRest
 from harness.runid import new_runid
 
@@ -33,11 +32,13 @@ def rest(instance: GrampsInstance) -> GrampsRest:
     return GrampsRest(instance.url, OWNER_USER, OWNER_PW)
 
 
-def add_person(instance: GrampsInstance, label: str, first_name: str) -> str:
-    """Seed through the shipped container rather than by hand-built REST bodies."""
-    session = McpSession(
-        f"{NAME_PREFIX}{instance.runid}-mcp-{label}",
-        DEFAULT_IMAGE,
+@pytest.fixture(scope="module")
+def mcp(instance: GrampsInstance, mcp_image: ImageRef) -> Iterator[McpContainer]:
+    """One container for the whole module. Every seeded person used to get its own, which is
+    a container start and a token mint each — against an endpoint limited to 1/second."""
+    running = McpContainer(
+        container_name(instance.runid, "oracle"),
+        mcp_image.run_reference,
         {
             "GRAMPS_BASE_URL": instance.internal_url,
             "GRAMPS_USERNAME": OWNER_USER,
@@ -46,27 +47,31 @@ def add_person(instance: GrampsInstance, label: str, first_name: str) -> str:
         network=instance.network,
         runid=instance.runid,
     )
-    session.initialize()
-    result = session.call(
+    try:
+        yield running
+    finally:
+        assert running.close() == [], "the MCP container outlived its test"
+
+
+def add_person(mcp: McpContainer, first_name: str) -> str:
+    """Seed through the shipped container rather than by hand-built REST bodies."""
+    result = mcp.call(
         "gramps_add_person",
         {"first_name": first_name, "surname": "Oracleprobe", "gender": 1, "birth_year": 1900},
         timeout=180,
     )
-    session.close()
     assert not result.is_error, result.text
     return result.text.strip()
 
 
-def test_fingerprint_is_stable_across_reads(instance: GrampsInstance, rest: GrampsRest) -> None:
-    add_person(instance, "seed", "Stable")
+def test_fingerprint_is_stable_across_reads(mcp: McpContainer, rest: GrampsRest) -> None:
+    add_person(mcp, "Stable")
     assert rest.fingerprint() == rest.fingerprint()
 
 
-def test_fingerprint_moves_when_an_object_appears(
-    instance: GrampsInstance, rest: GrampsRest
-) -> None:
+def test_fingerprint_moves_when_an_object_appears(mcp: McpContainer, rest: GrampsRest) -> None:
     before = rest.snapshot()
-    add_person(instance, "second", "Appears")
+    add_person(mcp, "Appears")
     after = rest.snapshot()
 
     assert after["counts"]["people"] == before["counts"]["people"] + 1
@@ -74,9 +79,9 @@ def test_fingerprint_moves_when_an_object_appears(
 
 
 def test_put_merge_preserves_the_fields_it_does_not_touch(
-    instance: GrampsInstance, rest: GrampsRest
+    mcp: McpContainer, rest: GrampsRest
 ) -> None:
-    gramps_id = add_person(instance, "merge", "Preserved")
+    gramps_id = add_person(mcp, "Preserved")
     before = rest.person(gramps_id)
     # add_person with a birth year gives us both a tag and an event reference — the two lists a
     # partial PUT was measured to wipe.
