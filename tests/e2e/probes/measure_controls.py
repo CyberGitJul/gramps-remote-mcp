@@ -20,35 +20,35 @@ from typing import Any
 import requests
 from harness.gramps_instance import OWNER_PW, OWNER_USER, GrampsInstance
 from harness.rest import MIN_LOGIN_GAP_S, GrampsRest
+from harness.token_audit import TokenAudit
 
 
 def access_log_and_oracle(instance: GrampsInstance, rest: GrampsRest) -> dict[str, dict]:
-    """D6 (the log exists at all) and D15 (the parser finds a known-good request)."""
-    access = instance.access_log()
-    before = instance.token_post_log()
+    """D6 (the log exists at all) and D15 (the parser finds a known-good request).
 
-    rest.token(force=True)
-    after = instance.token_post_log()
-    new_lines = after[len(before) :]
-    ips = sorted({line.split()[1] for line in new_lines}) if new_lines else []
+    Both go through `TokenAudit`, the same class the tests use — a probe that parsed the log
+    its own way could certify a parser nobody ships.
+    """
+    audit = TokenAudit(instance.access_log)
+    access_lines = len(instance.access_log())
+    before = audit.count()
+    control = audit.positive_control(lambda: rest.token(force=True))
 
     return {
         "d6_access_log": {
             "cmd_override_applied": True,
-            "access_lines": len(access),
-            "token_post_lines": len(before),
-            "sample": before[-1] if before else None,
+            "access_lines": access_lines,
+            "token_post_lines": before,
+            "by_ip": audit.by_ip(),
             "default_cmd_has_access_log": False,
             "conclusion": "token POSTs are countable only with the D6 CMD override",
         },
         "d15_token_oracle": {
-            "single_post_visible": len(new_lines) >= 1,
-            "new_lines": new_lines,
-            "attributed_ips": ips,
-            "status_200_present": any(
-                line.endswith(" 200") or " 200" in line for line in new_lines
-            ),
-            "conclusion": "positive control passed — a tok(ip)==0 assertion is not vacuous",
+            "single_post_visible": control["passed"],
+            "new_lines": control["found"],
+            "attributed_ips": control["ips"],
+            "status_200_present": control["passed"],
+            "conclusion": "positive control passed — a count(ip)==0 assertion is not vacuous",
         },
     }
 

@@ -54,6 +54,7 @@ def test_two_consecutive_bring_ups_leave_nothing_behind() -> None:
         finally:
             instance.teardown()
 
+        assert instance.leftovers == [], "teardown reported resources it could not remove"
         for kind, before in leftovers_before.items():
             assert _ours(kind) == before, f"{kind}s left behind after teardown"
 

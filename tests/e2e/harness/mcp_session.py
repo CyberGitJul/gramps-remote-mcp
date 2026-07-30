@@ -19,6 +19,8 @@ from typing import Any
 from .docker_util import ProbeError, assert_ours
 from .runid import label_args
 
+DEFAULT_IMAGE = "gramps-remote-mcp:latest"
+
 
 @dataclass
 class ToolResult:

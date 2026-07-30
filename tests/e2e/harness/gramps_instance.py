@@ -18,8 +18,21 @@ from typing import Any
 
 import requests
 
-from .docker_util import NAME_PREFIX, ProbeError, assert_ours, docker, free_port, run
+from .docker_util import (
+    NAME_PREFIX,
+    ProbeError,
+    assert_ours,
+    docker,
+    free_port,
+    resource_exists,
+    run,
+)
 from .runid import label_args
+
+# Every instance that has been started and not yet cleanly torn down. The session guard in
+# tests/e2e/conftest.py reads this, so a leak becomes a red run instead of a stray container
+# somebody notices days later.
+STARTED: list[GrampsInstance] = []
 
 GRAMPSWEB_IMAGE = "ghcr.io/gramps-project/grampsweb:latest"
 REDIS_IMAGE = "redis:alpine"
@@ -65,6 +78,7 @@ class GrampsInstance:
         self.port = 0
         self.readiness_s = 0.0
         self.created: list[str] = []
+        self.leftovers: list[str] = []
 
     @property
     def url(self) -> str:
@@ -76,6 +90,7 @@ class GrampsInstance:
         return f"http://{self.web}:5000"
 
     def start(self) -> None:
+        STARTED.append(self)
         self.port = free_port()
         label = label_args(self.runid)
         docker("network", "create", *label, self.network)
@@ -219,16 +234,48 @@ class GrampsInstance:
         return [line for line in out.splitlines() if line.strip()]
 
     def teardown(self) -> list[str]:
-        removed = []
-        for name in (self.web, self.redis):
-            if f"container:{name}" in self.created:
-                docker("rm", "-f", assert_ours(name), check=False)
-                removed.append(name)
-        if f"network:{self.network}" in self.created:
-            docker("network", "rm", self.network, check=False)
-            removed.append(self.network)
-        for volume in (self.users_volume, self.data_volume):
-            if f"volume:{volume}" in self.created:
-                docker("volume", "rm", "-f", assert_ours(volume), check=False)
-                removed.append(volume)
+        """Remove everything this instance created, and *verify* that it is gone.
+
+        Removals run with `check=False` — a teardown must not raise over a resource that was
+        already collected. That makes verification the only honest signal: a full `-m e2e` run
+        once left a redis container, its network and both volumes behind while reporting
+        success, because nothing looked afterwards. Order matters (containers, then network,
+        then volumes: docker refuses to drop either while a container still holds it), and one
+        retry covers the window in which a container is removed but not yet released.
+        """
+        plan = [
+            *(("container", name) for name in (self.web, self.redis)),
+            ("network", self.network),
+            *(("volume", name) for name in (self.users_volume, self.data_volume)),
+        ]
+        targets = [(kind, name) for kind, name in plan if f"{kind}:{name}" in self.created]
+
+        removed: list[str] = []
+        for attempt in (0, 1):
+            outstanding = []
+            for kind, name in targets:
+                self._remove(kind, name)
+                if resource_exists(kind, name):
+                    outstanding.append((kind, name))
+                else:
+                    removed.append(name)
+            targets = outstanding
+            if not targets:
+                break
+            if attempt == 0:
+                time.sleep(1.0)
+
+        self.leftovers = [f"{kind}:{name}" for kind, name in targets]
+        if not self.leftovers and self in STARTED:
+            STARTED.remove(self)
         return removed
+
+    @staticmethod
+    def _remove(kind: str, name: str) -> None:
+        assert_ours(name)
+        if kind == "container":
+            docker("rm", "-f", name, check=False)
+        elif kind == "network":
+            docker("network", "rm", name, check=False)
+        else:
+            docker("volume", "rm", "-f", name, check=False)

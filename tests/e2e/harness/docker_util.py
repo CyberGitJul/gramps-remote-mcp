@@ -55,6 +55,20 @@ def free_port() -> int:
     return port
 
 
+def resource_exists(kind: str, name: str) -> bool:
+    """Is this container / network / volume still there?
+
+    Removal commands run with `check=False` so a teardown never masks the failure it is
+    cleaning up after — which means the only way to know a removal worked is to look.
+    """
+    listing = {
+        "container": ("ps", "-a", "--format", "{{.Names}}"),
+        "network": ("network", "ls", "--format", "{{.Name}}"),
+        "volume": ("volume", "ls", "--format", "{{.Name}}"),
+    }[kind]
+    return name in docker(*listing, check=False).split()
+
+
 def inspect_container(name: str, template: str) -> str:
     """Read-only inspect that works on foreign containers too (INT state recording)."""
     return docker("inspect", name, "--format", template, check=False)

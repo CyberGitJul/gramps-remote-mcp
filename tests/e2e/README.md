@@ -19,21 +19,24 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `harness/mcp_session.py` | raw JSON-RPC stdio driver against the shipped image (D21) |
 | `harness/runid.py` | run identity, Docker labels, artifact dirs |
 | `harness/reaper.py` | reaps leftovers without killing a live run (D18) |
-| `test_01_instance.py` | T1.3 acceptance: two bring-ups, nothing left behind, INT untouched |
+| `harness/token_audit.py` | counts token POSTs per client IP from the access log (D15) |
 | `probes/probe_bringup.py` | the one bring-up probe (D10) |
 | `probes/observed.json` | its committed answers — **the** platform reference |
-| `conftest.py` | stamps the `e2e` marker on everything below this directory (D1) |
-| `test_00_gate.py`, `test_00_reaper.py` | the two Docker-free tests: the gate and the reaper's guards |
+| `conftest.py` | stamps the `e2e` marker (D1); fails the run on a leaked instance |
+| `test_00_*.py`, `test_02_token_audit.py` | Docker-free: gate, reaper guards, teardown bookkeeping, log parser |
+| `test_01_instance.py` | T1.3 acceptance: two bring-ups, nothing left behind, INT untouched |
+| `test_03_rest_oracle.py` | T1.4: snapshot/fingerprint, and `put_merge` preserving what it does not touch |
 
-Phase 0 created the probe and the harness skeleton; T1.1 added the gate and T1.2 the reaper.
-The fixture, the reset and `assertions.py` are the rest of Phase 1.
+Phase 0 created the probe and the harness skeleton; T1.1 added the gate, T1.2 the reaper, T1.3
+the restartable instance and T1.4 the oracle plus the token audit. The canonical fixture, the
+reset and `assertions.py` are the rest of Phase 1.
 
 ## Running it
 
 ```bash
 pytest -q                       # unit suite only: 259 passed, e2e deselected, no Docker
-pytest -q -m e2e                # the e2e tests (~20 s; test_01_instance needs Docker)
-pytest -q -m e2e -k "gate or reaper"   # the Docker-free subset, <1 s
+pytest -q -m e2e                # all 27 e2e tests, ~40 s (four of them need Docker)
+pytest -q -m e2e -k "gate or reaper or teardown or token_audit"   # Docker-free subset, <1 s
 pytest --e2e-reap-only          # reap stale gwe2e-* resources, prune artifact dirs, exit
 pytest --e2e-reap-only --e2e-force --e2e-keep-runs=1   # also remove a *running* instance
 
@@ -52,6 +55,15 @@ The plan writes D18's flag as `--force`; it ships as `--e2e-force` so every flag
 shares one namespace in pytest's global option space. Note also that containers run with
 `--rm`, so an exited one removes itself — what the reaper actually finds after a killed run is
 *running* containers and orphaned networks, not exited ones.
+
+**Cleanup is verified, not assumed.** A full run once finished green while leaving a redis
+container, its network and both volumes behind: every removal runs with `check=False` (a
+teardown must not raise over a resource that is already gone), so nothing noticed. `teardown()`
+now re-checks each resource, retries once — docker refuses to drop a network or volume while a
+container still holds it — and records what survived in `instance.leftovers`. A session fixture
+in `conftest.py` reaps anything still registered and **fails the run**, so a leak can never be
+silent again. `test_00_teardown.py` pins that bookkeeping without Docker, because a guard that
+cannot fire is worth nothing.
 
 Needs: Docker, the `.venv` (`requests`), the images `ghcr.io/gramps-project/grampsweb:latest`,
 `redis:alpine` and `gramps-remote-mcp:latest`, plus the synthetic fixture

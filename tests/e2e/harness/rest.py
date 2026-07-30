@@ -8,6 +8,8 @@ code under test. The token is minted, never refreshed — `POST /api/objects/del
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from typing import Any
 
@@ -57,12 +59,25 @@ class GrampsRest:
         self.tokens_minted += 1
         return self._token
 
-    def request(self, method: str, path: str, **kwargs: Any) -> requests.Response:
+    def request(
+        self, method: str, path: str, *, retry_401: bool = True, **kwargs: Any
+    ) -> requests.Response:
+        """One request. A 401 buys exactly one re-mint and retry (D22).
+
+        Only 401 — a signature failure answers **422** (measured, `u7_relogin_trigger`), and
+        re-minting on that would paper over a rotated server key instead of surfacing it.
+        """
         headers = {"Authorization": f"Bearer {self.token()}"}
         headers.update(kwargs.pop("headers", {}))
-        return self.session.request(
+        reply = self.session.request(
             method, f"{self.base_url}{path}", headers=headers, timeout=60, **kwargs
         )
+        if reply.status_code == 401 and retry_401:
+            self.invalidate()
+            return self.request(
+                method, path, retry_401=False, headers=kwargs.pop("headers", {}), **kwargs
+            )
+        return reply
 
     def get_json(self, path: str) -> Any:
         reply = self.request("GET", path)
@@ -74,3 +89,69 @@ class GrampsRest:
 
     def total(self) -> int:
         return sum(self.object_counts().values())
+
+    # -- the object vocabulary (D3) --------------------------------------------
+
+    def objects(self, namespace: str, query: str = "") -> list[dict[str, Any]]:
+        """Every object of one namespace. Unpaginated on purpose: the fixture is small and
+        `count_*` in the product is `len(list)`, so the oracle has to see the same thing."""
+        return self.get_json(f"/api/{namespace}/{query}")
+
+    def people(self) -> list[dict[str, Any]]:
+        return self.objects("people")
+
+    def families(self) -> list[dict[str, Any]]:
+        return self.objects("families")
+
+    def sources(self) -> list[dict[str, Any]]:
+        return self.objects("sources")
+
+    def notes(self) -> list[dict[str, Any]]:
+        return self.objects("notes")
+
+    def tags(self) -> list[dict[str, Any]]:
+        return self.objects("tags")
+
+    def by_gramps_id(self, namespace: str, gramps_id: str) -> dict[str, Any]:
+        for record in self.objects(namespace):
+            if record.get("gramps_id") == gramps_id:
+                return self.get_json(f"/api/{namespace}/{record['handle']}")
+        raise LookupError(f"no {namespace[:-1]} with gramps_id {gramps_id!r}")
+
+    def person(self, gramps_id: str) -> dict[str, Any]:
+        return self.by_gramps_id("people", gramps_id)
+
+    def put_merge(self, namespace: str, handle: str, changes: dict[str, Any]) -> requests.Response:
+        """Read, modify, write **the whole record** — the only PUT this suite may perform.
+
+        Measured (`u5_put_semantics`): a partial body answers 200 and *blanks every omitted
+        field* — `tag_list` 1 → 0, the surname gone. A trailing slash answers 405, so the path
+        deliberately has none.
+        """
+        record = self.get_json(f"/api/{namespace}/{handle}")
+        record.update(changes)
+        return self.request("PUT", f"/api/{namespace}/{handle}", json=record)
+
+    # -- state observation ------------------------------------------------------
+
+    def snapshot(self) -> dict[str, Any]:
+        """Counts plus the identity of every object, which is what assertions compare."""
+        counts = self.object_counts()
+        objects = {
+            namespace: sorted(
+                (record.get("gramps_id", ""), record.get("handle", ""))
+                for record in self.objects(namespace)
+            )
+            for namespace in sorted(counts)
+        }
+        return {"counts": counts, "total": sum(counts.values()), "objects": objects}
+
+    def fingerprint(self, snapshot: dict[str, Any] | None = None) -> str:
+        """A stable digest of *identity*, not of content or timestamps.
+
+        Deliberately excludes `change`: a fingerprint that moves on every touch cannot answer
+        "did this call add or remove anything", which is the question the guards ask.
+        """
+        state = snapshot or self.snapshot()
+        material = json.dumps(state["objects"], sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(material.encode()).hexdigest()[:16]
