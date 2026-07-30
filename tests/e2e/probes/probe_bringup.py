@@ -84,6 +84,7 @@ class BringUpProbe:
                 env,
                 network=instance.network,
                 mounts=((str(self.backup_dir), "/data"),),
+                runid=self.runid,
             )
             session.initialize()
             self.sessions.append(session)

@@ -19,6 +19,7 @@ from typing import Any
 import requests
 
 from .docker_util import NAME_PREFIX, ProbeError, assert_ours, docker, free_port, run
+from .runid import label_args
 
 GRAMPSWEB_IMAGE = "ghcr.io/gramps-project/grampsweb:latest"
 REDIS_IMAGE = "redis:alpine"
@@ -71,7 +72,8 @@ class GrampsInstance:
 
     def start(self) -> None:
         self.port = free_port()
-        docker("network", "create", self.network)
+        label = label_args(self.runid)
+        docker("network", "create", *label, self.network)
         self.created.append(f"network:{self.network}")
 
         env = {
@@ -85,6 +87,7 @@ class GrampsInstance:
                 "--rm",
                 "--name",
                 assert_ours(self.redis),
+                *label,
                 "--network",
                 self.network,
                 REDIS_IMAGE,
@@ -99,6 +102,7 @@ class GrampsInstance:
             "--rm",
             "--name",
             assert_ours(self.web),
+            *label,
             "--network",
             self.network,
             "-p",

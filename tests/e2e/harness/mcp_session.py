@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .docker_util import ProbeError, assert_ours
+from .runid import label_args
 
 
 @dataclass
@@ -48,9 +49,12 @@ class McpSession:
         *,
         network: str | None = None,
         mounts: tuple[tuple[str, str], ...] = (),
+        runid: str | None = None,
     ) -> None:
         self.name = assert_ours(name)
         args = ["docker", "run", "--rm", "-i", "--name", self.name]
+        if runid:
+            args += label_args(runid)
         if network:
             args += ["--network", network]
         for host_path, container_path in mounts:

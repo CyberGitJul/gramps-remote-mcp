@@ -17,19 +17,39 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `harness/gramps_instance.py` | disposable Gramps Web + Redis on its own network (D6, D14) |
 | `harness/rest.py` | the REST oracle — the only way the suite observes tree state (D3, D22) |
 | `harness/mcp_session.py` | raw JSON-RPC stdio driver against the shipped image (D21) |
+| `harness/runid.py` | run identity, Docker labels, artifact dirs |
+| `harness/reaper.py` | reaps leftovers without killing a live run (D18) |
 | `probes/probe_bringup.py` | the one bring-up probe (D10) |
 | `probes/observed.json` | its committed answers — **the** platform reference |
+| `conftest.py` | stamps the `e2e` marker on everything below this directory (D1) |
+| `test_00_gate.py`, `test_00_reaper.py` | the two Docker-free tests: the gate and the reaper's guards |
 
-Phase 0 created these. The fixture, the reset, `assertions.py`, the pytest gate and the
-test files themselves are Phase 1 and later.
+Phase 0 created the probe and the harness skeleton; T1.1 added the gate and T1.2 the reaper.
+The fixture, the reset and `assertions.py` are the rest of Phase 1.
 
 ## Running it
 
 ```bash
+pytest -q                       # unit suite only: 259 passed, e2e deselected, no Docker
+pytest -q -m e2e                # the e2e tests; the two above need no Docker
+pytest --e2e-reap-only          # reap stale gwe2e-* resources, prune artifact dirs, exit
+pytest --e2e-reap-only --e2e-force --e2e-keep-runs=1   # also remove a *running* instance
+
 .venv/bin/python tests/e2e/probes/probe_bringup.py --json              # refresh observed.json
 .venv/bin/python tests/e2e/probes/probe_bringup.py --json --verbose    # echo every record
 .venv/bin/python tests/e2e/probes/probe_bringup.py --keep --verbose    # leave the instance up
 ```
+
+The gate has two independent halves, because either alone is one edit away from being
+useless: `addopts = "-m 'not e2e'"` in `pyproject.toml` deselects, and `conftest.py` stamps the
+marker on every item under this directory so a test that forgets `@pytest.mark.e2e` is still
+gated. `test_00_gate.py` pins both — it carries no marker itself, so if the stamping breaks it
+starts showing up in the default run's count.
+
+The plan writes D18's flag as `--force`; it ships as `--e2e-force` so every flag of this suite
+shares one namespace in pytest's global option space. Note also that containers run with
+`--rm`, so an exited one removes itself — what the reaper actually finds after a killed run is
+*running* containers and orphaned networks, not exited ones.
 
 Needs: Docker, the `.venv` (`requests`), the images `ghcr.io/gramps-project/grampsweb:latest`,
 `redis:alpine` and `gramps-remote-mcp:latest`, plus the synthetic fixture
