@@ -24,15 +24,43 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `probes/probe_bringup.py` | the one bring-up probe (D10) |
 | `probes/observed.json` | its committed answers — **the** platform reference |
 | `stubs/fake_mcp_server.py` | a rude stdio server, so the framing is testable without Docker |
+| `fixtures/synthetic-tree.gramps` | the canonical tree (D2): 42 people, 21 families, 21 sources, plain XML |
+| `fixtures/cast.py` | every id and the observed counts — **no test body may carry an id literal** |
+| `fixtures/build_fixture.py` | regrows the tree with the server's own tools; run rarely |
 | `conftest.py` | stamps the `e2e` marker (D1); resolves the image; fails the run on a leak |
 | `test_00_*.py`, `test_02_token_audit.py` | Docker-free: gate, reaper guards, teardown bookkeeping, framing, image legs, log parser |
 | `test_01_instance.py` | T1.3 acceptance: two bring-ups, nothing left behind, INT untouched |
 | `test_03_rest_oracle.py` | T1.4: snapshot/fingerprint, and `put_merge` preserving what it does not touch |
 | `test_04_mcp_container.py` | T1.5 acceptance: handshake, `off 27 / on 31`, reuse, verified removal |
+| `test_05_fixture.py` | T1.6 acceptance: the fixture imports and reads back exactly as built |
 
 Phase 0 created the probe and the harness skeleton; T1.1 added the gate, T1.2 the reaper, T1.3
-the restartable instance, T1.4 the oracle plus the token audit and T1.5 the container. The
-canonical fixture, the reset and `assertions.py` are the rest of Phase 1.
+the restartable instance, T1.4 the oracle plus the token audit, T1.5 the container and T1.6 the
+canonical fixture. The reset and `assertions.py` are the rest of Phase 1.
+
+### The canonical fixture (D2)
+
+Grown with the server's **own tools** rather than hand-written, so it carries the side effects
+a hand-written file would miss: `add_person` creates the `Unbestätigt` tag on first use and a
+blog post creates `Blog`. A fixture seeding neither would make the first write in any later
+test move the tag count by one and read as a failure. Every person in it is invented — the repo
+is public and the real `.gramps` backups are a real family tree.
+
+21 is not a round number: `count_people`/`count_families`/`count_sources` in the product are
+`len(unpaginated list)` against a default pagesize of 20, so at 20 or fewer the pagination
+assumption is untestable.
+
+Stored as plain XML. Measured: two exports of an unchanged tree are byte-identical *after*
+ungzipping, so the UUID that makes a `.gramps` file unreproducible sits in the gzip wrapper,
+not in the XML. The builder additionally blanks `<created date=…>` and the per-object `change=`
+mtimes — the only two fields that move between runs — so a regenerated fixture diffs where the
+tree changed and nowhere else. `ruff format` normalises the generated `cast.py` on commit.
+
+One property is easy to get wrong and was: **a damaged fixture is not visible in the counts it
+is named for.** Deleting a whole `<family>` element leaves people, families and sources
+untouched, because every person carries a `<parentin>`/`<childof>` reference and the importer
+rebuilds the family from it — same id, same members. It shows up as one extra **note**, since
+Gramps records the repair. `test_05` therefore asserts the whole count dict, not three keys.
 
 ### Which image is under test (D8)
 
@@ -58,7 +86,7 @@ hand, so a tag can move out from under a run in flight. The resolved id is what 
 
 ```bash
 pytest -q                       # unit suite only: 259 passed, e2e deselected, no Docker
-pytest -q -m e2e                # all 55 e2e tests, ~46 s (nine of them need Docker)
+pytest -q -m e2e                # all 64 e2e tests, ~65 s (16 of them need Docker)
 pytest -q -m e2e tests/e2e/test_00_*.py tests/e2e/test_02_token_audit.py  # no Docker, ~2 s
 pytest --e2e-reap-only          # reap stale gwe2e-* resources, prune artifact dirs, exit
 pytest --e2e-reap-only --e2e-force --e2e-keep-runs=1   # also remove a *running* instance
