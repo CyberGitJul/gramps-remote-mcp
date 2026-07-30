@@ -57,6 +57,11 @@ class GrampsInstance:
         self.network = f"{tag}-net"
         self.web = f"{tag}-web"
         self.redis = f"{tag}-redis"
+        # Named volumes, so the web container can be replaced without losing the tree or the
+        # user database. Restarting it with a different secret key is the only way found to
+        # invalidate an issued token, and that is worthless if the credentials die with it.
+        self.users_volume = f"{tag}-users"
+        self.data_volume = f"{tag}-data"
         self.port = 0
         self.readiness_s = 0.0
         self.created: list[str] = []
@@ -76,10 +81,10 @@ class GrampsInstance:
         docker("network", "create", *label, self.network)
         self.created.append(f"network:{self.network}")
 
-        env = {
-            "GRAMPSWEB_TREE": TREE_NAME,
-            "GRAMPSWEB_SECRET_KEY": f"e2e-{self.runid}-not-a-real-secret",
-        }
+        for volume in (self.users_volume, self.data_volume):
+            docker("volume", "create", *label, assert_ours(volume))
+            self.created.append(f"volume:{volume}")
+
         if self.with_redis:
             docker(
                 "run",
@@ -93,6 +98,16 @@ class GrampsInstance:
                 REDIS_IMAGE,
             )
             self.created.append(f"container:{self.redis}")
+
+        self._start_web()
+
+    def _start_web(self) -> None:
+        """Run the web container against the existing network, volumes and port."""
+        env = {
+            "GRAMPSWEB_TREE": TREE_NAME,
+            "GRAMPSWEB_SECRET_KEY": f"e2e-{self.runid}-not-a-real-secret",
+        }
+        if self.with_redis:
             env["GRAMPSWEB_RATELIMIT_STORAGE_URI"] = f"redis://{self.redis}:6379/0"
         env.update(self.extra_env)
 
@@ -102,18 +117,35 @@ class GrampsInstance:
             "--rm",
             "--name",
             assert_ours(self.web),
-            *label,
+            *label_args(self.runid),
             "--network",
             self.network,
             "-p",
             f"{self.port}:5000",
+            "-v",
+            f"{self.users_volume}:/app/users",
+            "-v",
+            f"{self.data_volume}:/root/.gramps",
         ]
         for key, value in env.items():
             args += ["-e", f"{key}={value}"]
         args += [GRAMPSWEB_IMAGE, "sh", "-c", GUNICORN_CMD]
         docker(*args)
-        self.created.append(f"container:{self.web}")
+        if f"container:{self.web}" not in self.created:
+            self.created.append(f"container:{self.web}")
         self.readiness_s = self._await_ready()
+
+    def restart_web(self, **extra_env: str) -> float:
+        """Replace the web container in place, keeping network, port and volumes.
+
+        Used to rotate `GRAMPSWEB_SECRET_KEY`: every issued token stops verifying while the
+        user database and the tree survive on their volumes, which is what makes the 401
+        relogin path reachable from a test at all.
+        """
+        docker("rm", "-f", assert_ours(self.web), check=False)
+        self.extra_env.update(extra_env)
+        self._start_web()
+        return self.readiness_s
 
     def _await_ready(self) -> float:
         """Poll `GET /api/openapi.json`; the tree is created before the port binds."""
@@ -195,4 +227,8 @@ class GrampsInstance:
         if f"network:{self.network}" in self.created:
             docker("network", "rm", self.network, check=False)
             removed.append(self.network)
+        for volume in (self.users_volume, self.data_volume):
+            if f"volume:{volume}" in self.created:
+                docker("volume", "rm", "-f", assert_ours(volume), check=False)
+                removed.append(volume)
         return removed

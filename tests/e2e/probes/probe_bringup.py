@@ -69,11 +69,17 @@ class BringUpProbe:
     def mcp_factory(self, instance: gi.GrampsInstance) -> Any:
         """Give the measurement functions sessions without teaching them the wiring."""
 
-        def factory(*, destructive: bool = False, label: str = "") -> McpSession:
+        def factory(
+            *,
+            destructive: bool = False,
+            label: str = "",
+            user: str = gi.OWNER_USER,
+            password: str = gi.OWNER_PW,
+        ) -> McpSession:
             env = {
                 "GRAMPS_BASE_URL": instance.internal_url,
-                "GRAMPS_USERNAME": gi.OWNER_USER,
-                "GRAMPS_PASSWORD": gi.OWNER_PW,
+                "GRAMPS_USERNAME": user,
+                "GRAMPS_PASSWORD": password,
                 "GRAMPS_BACKUP_DIR": "/data",
             }
             if destructive:
@@ -207,10 +213,20 @@ class BringUpProbe:
         self.step("[U2] JWT lifetime and the shortening env var")
         self.merge(measure_unknowns.jwt(instance, rest, self.jwt_control(), JWT_OVERRIDE_S))
 
+        self.step("[U7] 401-relogin trigger via a rotated secret key")
+        self.merge(measure_unknowns.relogin_trigger(instance, rest))
+        # The rotation invalidated this client's cached token; drop it so the next call mints
+        # a new one. Constructing a second client here instead would mint immediately and, at
+        # 1 login per second per IP, collide with the one the measurement just made.
+        rest.invalidate()
+
         self.step("[§5/F1/F2] shapes, additive import, coerced confirm, wipe")
         self.merge(
             measure_controls.cycle(rest, mcp, self.fixture.name, self.backup_dir, self.runid)
         )
+
+        self.step("[U8/D12] EDITOR role profile — everyday writes yes, destructive no")
+        self.merge(measure_unknowns.editor_profile(rest, mcp))
 
     def run(self) -> int:
         int_before = self.int_state()

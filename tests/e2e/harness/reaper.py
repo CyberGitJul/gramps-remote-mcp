@@ -104,7 +104,13 @@ def _candidates() -> list[Candidate]:
 def reap(*, force: bool = False, grace_min: int = LIVE_RUN_GRACE_MIN) -> dict[str, list[str]]:
     """Remove stale containers, then their networks, then stale `:e2e-*` images."""
     now = datetime.now(UTC)
-    report: dict[str, list[str]] = {"removed": [], "skipped": [], "images": [], "networks": []}
+    report: dict[str, list[str]] = {
+        "removed": [],
+        "skipped": [],
+        "images": [],
+        "networks": [],
+        "volumes": [],
+    }
     live_runids = set()
 
     for candidate in _candidates():
@@ -127,6 +133,18 @@ def reap(*, force: bool = False, grace_min: int = LIVE_RUN_GRACE_MIN) -> dict[st
             continue
         docker("network", "rm", network, check=False)
         report["networks"].append(network)
+
+    for line in docker(
+        "volume", "ls", "--filter", f"label={LABEL_KEY}", "--format", "{{.Name}}", check=False
+    ).splitlines():
+        volume = line.strip()
+        if not volume or not volume.startswith(NAME_PREFIX):
+            continue
+        if any(runid and runid in volume for runid in live_runids):
+            report["skipped"].append(f"{volume}: volume of a live run")
+            continue
+        docker("volume", "rm", "-f", volume, check=False)
+        report["volumes"].append(volume)
 
     for line in docker(
         "images",
@@ -152,7 +170,7 @@ def format_report(report: dict[str, list[str]]) -> str:
     lines = [
         f"reaper: {len(report['removed'])} container(s) removed, {len(report['skipped'])} skipped"
     ]
-    for key in ("removed", "networks", "images", "skipped"):
+    for key in ("removed", "networks", "volumes", "images", "skipped"):
         lines += [f"  {key}: {item}" for item in report[key]]
     return "\n".join(lines)
 

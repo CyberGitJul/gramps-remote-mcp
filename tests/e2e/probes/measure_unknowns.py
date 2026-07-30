@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
+import requests
 from harness.docker_util import inspect_container, jwt_payload
-from harness.gramps_instance import OWNER_PW, OWNER_USER, GrampsInstance
+from harness.gramps_instance import EDITOR_PW, EDITOR_USER, OWNER_PW, OWNER_USER, GrampsInstance
 from harness.rest import GrampsRest
 
 
@@ -182,6 +183,119 @@ def put_semantics(rest: GrampsRest) -> dict[str, dict]:
             and after_summary != before_summary,
             "conclusion": "read-modify-write the full record (put_merge); never send a partial body",
             "error_head": partial.text[:200] if partial.status_code >= 300 else None,
+        }
+    }
+
+
+def relogin_trigger(instance: GrampsInstance, rest: GrampsRest) -> dict[str, dict]:
+    """The residual `[U]`: how does a test provoke the 401-relogin path?
+
+    `GRAMPSWEB_JWT_ACCESS_TOKEN_EXPIRES` turned out to be ignored, so the 15-minute expiry
+    cannot be waited out. The candidate measured here is a secret-key rotation: replace the web
+    container with a different `GRAMPSWEB_SECRET_KEY` and every issued token stops verifying,
+    while the user database and the tree survive on their volumes — which is the part that makes
+    it usable as a test, because the client has to be able to log in again with the same
+    credentials.
+    """
+    counts_before = rest.object_counts()
+    stale_token = rest.token()
+
+    restart_s = instance.restart_web(
+        GRAMPSWEB_SECRET_KEY=f"rotated-{instance.runid}-not-a-real-secret"
+    )
+    stale = requests.get(
+        f"{instance.url}/api/metadata/",
+        headers={"Authorization": f"Bearer {stale_token}"},
+        timeout=30,
+    )
+
+    after = GrampsRest(instance.url, OWNER_USER, OWNER_PW)
+    try:
+        relogin_status: int | None = after.request("GET", "/api/metadata/").status_code
+        counts_after = after.object_counts()
+        relogin_error = None
+    except requests.RequestException as exc:
+        relogin_status, counts_after, relogin_error = None, {}, f"{type(exc).__name__}: {exc}"
+
+    return {
+        "u7_relogin_trigger": {
+            "method": "restart the web container with a rotated GRAMPSWEB_SECRET_KEY",
+            "restart_seconds": restart_s,
+            "stale_token_status": stale.status_code,
+            "stale_token_rejected": stale.status_code == 401,
+            "stale_token_body_head": stale.text[:160],
+            "relogin_status": relogin_status,
+            "credentials_survived": relogin_status == 200,
+            "relogin_error": relogin_error,
+            "stale_token_is_401": stale.status_code == 401,
+            "consequence": (
+                "the product re-logs in on 401 only; a signature failure answers 422, so a "
+                "rotated secret key does NOT exercise the relogin path"
+            ),
+            "counts_before": sum(counts_before.values()),
+            "counts_after": sum(counts_after.values()) if counts_after else None,
+            "tree_survived": bool(counts_after)
+            and sum(counts_after.values()) == sum(counts_before.values()),
+            "usable_as_a_test": (
+                stale.status_code == 401 and relogin_status == 200 and bool(counts_after)
+            ),
+        }
+    }
+
+
+def editor_profile(rest: GrampsRest, mcp: Any) -> dict[str, dict]:
+    """D12: EDITOR is the *recommended* deployment role, so a tool that silently needs OWNER
+    is a live risk. Everyday writes and an export must work; import and the wipe must not.
+
+    **Who refuses matters.** The first version of this measurement sent the wipe without
+    `expected_count`, so the tool's own argument guard rejected it before any HTTP call — and
+    the record then claimed "destructive refused", which would have been just as true for an
+    OWNER. The call now carries a valid `expected_count`, and each refusal is attributed to the
+    server or to our own guard instead of being counted as a pass on its own.
+
+    Runs last in the probe: if the wipe turns out to be permitted, it can no longer distort an
+    earlier measurement.
+    """
+    session = mcp(destructive=True, label="-editor", user=EDITOR_USER, password=EDITOR_PW)
+    # Arguments are built lazily, one call before use. Read eagerly, `expected_count` is the
+    # total from *before* the add_person above — and a stale count is rejected by our own
+    # argument guard before the request is ever sent, which is precisely the false pass this
+    # measurement exists to rule out. It fooled this probe twice before the lambda.
+    calls: list[tuple[str, Any]] = [
+        ("gramps_add_person", lambda: {"first_name": "Editor", "surname": "Probe", "gender": 1}),
+        ("gramps_export_tree", lambda: {"filename": "editor-probe.gramps"}),
+        ("gramps_import_file", lambda: {"filename": "editor-probe.gramps"}),
+        ("gramps_delete_all_objects", lambda: {"confirm": True, "expected_count": rest.total()}),
+    ]
+    results: dict[str, Any] = {}
+    for tool, build_arguments in calls:
+        arguments = build_arguments()
+        called = session.call(tool, arguments, timeout=300)
+        by_server = "403" in called.text or "FORBIDDEN" in called.text.upper()
+        results[tool] = {
+            "arguments": arguments,
+            "is_error": called.is_error,
+            "text_head": called.text[:200],
+            "refused_by": "server-403" if by_server else ("our-guard" if called.is_error else None),
+        }
+    session.close()
+
+    allowed = not (
+        results["gramps_add_person"]["is_error"] or results["gramps_export_tree"]["is_error"]
+    )
+    refused_by_server = sorted(
+        tool
+        for tool in ("gramps_import_file", "gramps_delete_all_objects")
+        if results[tool]["refused_by"] == "server-403"
+    )
+    return {
+        "u8_editor_profile": {
+            "role": "EDITOR (3)",
+            "per_tool": results,
+            "everyday_writes_allowed": allowed,
+            "destructive_refused_by_server": refused_by_server,
+            "matches_d12_expectation": allowed and len(refused_by_server) == 2,
+            "note": "a refusal from our own argument guard is no evidence about the role",
         }
     }
 

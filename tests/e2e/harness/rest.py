@@ -16,6 +16,11 @@ import requests
 MIN_LOGIN_GAP_S = 1.1
 TOKEN_MAX_AGE_S = 13 * 60
 
+# The 1/second limit is keyed by client IP, so the gap has to hold across *every* client in
+# this process, not per instance. Measured the hard way: two freshly constructed clients each
+# had an empty per-object history, minted inside the same second, and the second one got a 429.
+_LAST_LOGIN_AT: dict[str, float] = {}
+
 
 class GrampsRest:
     """Authenticated REST access to one Gramps Web instance."""
@@ -29,11 +34,16 @@ class GrampsRest:
         self._token: str | None = None
         self._minted_at = 0.0
 
+    def invalidate(self) -> None:
+        """Drop the cached token — after a secret-key rotation it no longer verifies."""
+        self._token = None
+
     def token(self, *, force: bool = False) -> str:
         if self._token and not force and time.monotonic() - self._minted_at < TOKEN_MAX_AGE_S:
             return self._token
-        gap = MIN_LOGIN_GAP_S - (time.monotonic() - self._minted_at)
-        if self._minted_at and gap > 0:
+        last_login = _LAST_LOGIN_AT.get(self.base_url, 0.0)
+        gap = MIN_LOGIN_GAP_S - (time.monotonic() - last_login)
+        if last_login and gap > 0:
             time.sleep(gap)
         reply = self.session.post(
             f"{self.base_url}/api/token/",
@@ -43,6 +53,7 @@ class GrampsRest:
         reply.raise_for_status()
         self._token = reply.json()["access_token"]
         self._minted_at = time.monotonic()
+        _LAST_LOGIN_AT[self.base_url] = self._minted_at
         self.tokens_minted += 1
         return self._token
 

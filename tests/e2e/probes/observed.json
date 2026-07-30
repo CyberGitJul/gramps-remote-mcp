@@ -1,10 +1,10 @@
 {
   "meta": {
-    "runid": "ee0caaea",
+    "runid": "6c2d6ad4",
     "probe": "tests/e2e/probes/probe_bringup.py",
     "plan": "docs/superpowers/plans/2026-07-30-e2e-test-suite.md",
-    "started_utc": "2026-07-30T13:56:01Z",
-    "git_commit": "775b0dad6002d14513db2ba690f8da84be1cb665",
+    "started_utc": "2026-07-30T15:00:54Z",
+    "git_commit": "2b0e87e5a33bd6bdaa979e4fe079f00f6d99523d",
     "git_branch": "test/e2e-suite-phase-0",
     "grampsweb_image": "ghcr.io/gramps-project/grampsweb:latest",
     "grampsweb_image_id": "sha256:dfaaf42c4dcb2c919b4cece188f23385e860d118b8e30dd1a1d5d3bc39b0d5d2",
@@ -17,10 +17,10 @@
   },
   "s5_readiness": {
     "signal": "GET /api/openapi.json == 200",
-    "seconds": 4.85,
+    "seconds": 5.1,
     "budget_s": 30.0,
     "reference_2026_07_30": 5.7,
-    "port": 42379
+    "port": 58903
   },
   "s5_bootstrap": {
     "create_owner_before_first_user": 200,
@@ -28,12 +28,12 @@
     "owner_add": {
       "rc": 0,
       "stdout": "",
-      "stderr": "(__main__.py:19): Gtk-CRITICAL **: 13:56:09.083: gtk_icon_theme_get_for_screen: assertion 'GDK_IS_SCREEN (screen)' failed\n[2026-07-30 13:56:09,628] INFO in __main__: Adding user owner ..."
+      "stderr": "(__main__.py:19): Gtk-CRITICAL **: 15:01:01.965: gtk_icon_theme_get_for_screen: assertion 'GDK_IS_SCREEN (screen)' failed\n[2026-07-30 15:01:02,496] INFO in __main__: Adding user owner ..."
     },
     "editor_add": {
       "rc": 0,
       "stdout": "",
-      "stderr": "(__main__.py:25): Gtk-CRITICAL **: 13:56:11.247: gtk_icon_theme_get_for_screen: assertion 'GDK_IS_SCREEN (screen)' failed\n[2026-07-30 13:56:11,789] INFO in __main__: Adding user editor ..."
+      "stderr": "(__main__.py:25): Gtk-CRITICAL **: 15:01:04.173: gtk_icon_theme_get_for_screen: assertion 'GDK_IS_SCREEN (screen)' failed\n[2026-07-30 15:01:04,724] INFO in __main__: Adding user editor ..."
     },
     "metadata_unauthenticated": 401,
     "note": "rc is the only success signal; the Gtk-CRITICAL on stderr is harmless"
@@ -41,7 +41,7 @@
   "s5_seed": {
     "fixture": "e2e-fixture.gramps",
     "fixture_bytes": 1159,
-    "import_seconds": 7.77,
+    "import_seconds": 8.1,
     "import_is_error": false,
     "import_text_head": "{\n  \"before\": {\n    \"citations\": 0,\n    \"events\": 0,\n    \"families\": 0,\n    \"media\": 0,\n    \"notes\": 0,\n    \"people\": 0,\n    \"places\": 0,\n    \"repositories\": 0,\n    \"sources\": 0,\n    \"tags\": 0\n  },\n  ",
     "object_counts": {
@@ -285,7 +285,7 @@
       429,
       429
     ],
-    "burst_ms": 82,
+    "burst_ms": 100,
     "sharp": true,
     "successes": 1,
     "one_success_control": true,
@@ -323,6 +323,22 @@
       "/app/src/build/lib/gramps_webapi/config.py:117:    JWT_ACCESS_TOKEN_EXPIRES = datetime.timedelta(minutes=15)"
     ]
   },
+  "u7_relogin_trigger": {
+    "method": "restart the web container with a rotated GRAMPSWEB_SECRET_KEY",
+    "restart_seconds": 4.73,
+    "stale_token_status": 422,
+    "stale_token_rejected": false,
+    "stale_token_body_head": "{\"message\":\"Signature verification failed\"}\n",
+    "relogin_status": 200,
+    "credentials_survived": true,
+    "relogin_error": null,
+    "stale_token_is_401": false,
+    "consequence": "the product re-logs in on 401 only; a signature failure answers 422, so a rotated secret key does NOT exercise the relogin path",
+    "counts_before": 18,
+    "counts_after": 18,
+    "tree_survived": true,
+    "usable_as_a_test": false
+  },
   "s5_shapes": {
     "note_text_value": {
       "string": "Otto Barghoorn was born in 1912 in a small village and later moved to the city, where he worked as a carpenter for four decades.",
@@ -333,11 +349,11 @@
     "export_is_error": false,
     "export_magic_bytes": "1f8b",
     "export_is_gzip": true,
-    "export_size": 1296
+    "export_size": 1297
   },
   "s5_import_additivity": {
     "second_import_is_error": false,
-    "second_import_seconds": 6.48,
+    "second_import_seconds": 6.59,
     "total_before": 18,
     "total_after": 32,
     "people_before": 6,
@@ -355,6 +371,53 @@
     "total_after": 0,
     "armed_destructive_tool": true,
     "finding": "F1 — pydantic coerces 'yes' to True before `confirm is not True` runs"
+  },
+  "u8_editor_profile": {
+    "role": "EDITOR (3)",
+    "per_tool": {
+      "gramps_add_person": {
+        "arguments": {
+          "first_name": "Editor",
+          "surname": "Probe",
+          "gender": 1
+        },
+        "is_error": false,
+        "text_head": "I0011",
+        "refused_by": null
+      },
+      "gramps_export_tree": {
+        "arguments": {
+          "filename": "editor-probe.gramps"
+        },
+        "is_error": false,
+        "text_head": "{\n  \"path\": \"/data/editor-probe.gramps\",\n  \"bytes\": 486,\n  \"counts\": {\n    \"citations\": 0,\n    \"events\": 0,\n    \"families\": 0,\n    \"media\": 0,\n    \"notes\": 0,\n    \"people\": 1,\n    \"places\": 0,\n    \"re",
+        "refused_by": null
+      },
+      "gramps_import_file": {
+        "arguments": {
+          "filename": "editor-probe.gramps"
+        },
+        "is_error": true,
+        "text_head": "Error executing tool gramps_import_file: 403 Client Error: FORBIDDEN for url: http://gwe2e-6c2d6ad4-web:5000/api/importers/gramps/file",
+        "refused_by": "server-403"
+      },
+      "gramps_delete_all_objects": {
+        "arguments": {
+          "confirm": true,
+          "expected_count": 2
+        },
+        "is_error": true,
+        "text_head": "Error executing tool gramps_delete_all_objects: 403 Client Error: FORBIDDEN for url: http://gwe2e-6c2d6ad4-web:5000/api/objects/delete/",
+        "refused_by": "server-403"
+      }
+    },
+    "everyday_writes_allowed": true,
+    "destructive_refused_by_server": [
+      "gramps_delete_all_objects",
+      "gramps_import_file"
+    ],
+    "matches_d12_expectation": true,
+    "note": "a refusal from our own argument guard is no evidence about the role"
   },
   "safety": {
     "int_containers_before": [
@@ -387,23 +450,31 @@
     ],
     "int_untouched": true,
     "created": [
-      "network:gwe2e-ee0caaea-net",
-      "container:gwe2e-ee0caaea-redis",
-      "container:gwe2e-ee0caaea-web",
-      "network:gwe2e-ee0caaea-jwt-net",
-      "container:gwe2e-ee0caaea-jwt-web"
+      "network:gwe2e-6c2d6ad4-net",
+      "volume:gwe2e-6c2d6ad4-users",
+      "volume:gwe2e-6c2d6ad4-data",
+      "container:gwe2e-6c2d6ad4-redis",
+      "container:gwe2e-6c2d6ad4-web",
+      "network:gwe2e-6c2d6ad4-jwt-net",
+      "volume:gwe2e-6c2d6ad4-jwt-users",
+      "volume:gwe2e-6c2d6ad4-jwt-data",
+      "container:gwe2e-6c2d6ad4-jwt-web"
     ],
     "removed": [
-      "gwe2e-ee0caaea-web",
-      "gwe2e-ee0caaea-redis",
-      "gwe2e-ee0caaea-net",
-      "gwe2e-ee0caaea-jwt-web",
-      "gwe2e-ee0caaea-jwt-net"
+      "gwe2e-6c2d6ad4-web",
+      "gwe2e-6c2d6ad4-redis",
+      "gwe2e-6c2d6ad4-net",
+      "gwe2e-6c2d6ad4-users",
+      "gwe2e-6c2d6ad4-data",
+      "gwe2e-6c2d6ad4-jwt-web",
+      "gwe2e-6c2d6ad4-jwt-net",
+      "gwe2e-6c2d6ad4-jwt-users",
+      "gwe2e-6c2d6ad4-jwt-data"
     ],
     "kept": false,
     "ports": [
-      42379,
-      45861
+      58903,
+      60883
     ],
     "int_port_avoided": true
   },

@@ -19,6 +19,7 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `harness/mcp_session.py` | raw JSON-RPC stdio driver against the shipped image (D21) |
 | `harness/runid.py` | run identity, Docker labels, artifact dirs |
 | `harness/reaper.py` | reaps leftovers without killing a live run (D18) |
+| `test_01_instance.py` | T1.3 acceptance: two bring-ups, nothing left behind, INT untouched |
 | `probes/probe_bringup.py` | the one bring-up probe (D10) |
 | `probes/observed.json` | its committed answers — **the** platform reference |
 | `conftest.py` | stamps the `e2e` marker on everything below this directory (D1) |
@@ -31,7 +32,8 @@ The fixture, the reset and `assertions.py` are the rest of Phase 1.
 
 ```bash
 pytest -q                       # unit suite only: 259 passed, e2e deselected, no Docker
-pytest -q -m e2e                # the e2e tests; the two above need no Docker
+pytest -q -m e2e                # the e2e tests (~20 s; test_01_instance needs Docker)
+pytest -q -m e2e -k "gate or reaper"   # the Docker-free subset, <1 s
 pytest --e2e-reap-only          # reap stale gwe2e-* resources, prune artifact dirs, exit
 pytest --e2e-reap-only --e2e-force --e2e-keep-runs=1   # also remove a *running* instance
 

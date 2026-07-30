@@ -252,13 +252,32 @@ may ship with an either/or assertion about any of these.
 | 5 | trailing slash, and partial PUT | `PUT /api/people/<handle>` → **200**; with a trailing slash → **405**. A partial body → **200 and it blanks every omitted field** (measured: `tag_list` 1 → 0, `event_ref_list` 1 → 0, surname → `null`). All five PUT sites in the product read-modify-write a full GET'ed object and use no trailing slash, so this is a harness constraint, not a product bug | `u5_put_semantics` |
 | 6 | Celery worker command | `["celery","-A","gramps_webapi.celery","worker","--loglevel=INFO","--concurrency=2"]`, read from the running INT worker; the binary is at `/venv/bin/celery` and the app module ships in the image | `u6_celery` |
 
-### Residual `[U]` — one, opened by answering item 2
+### Residual `[U]` — measured in T1.3, and the candidate does not work
 
-**How does an E2E test provoke the 401-relogin path?** The env var does not shorten the token, so
-the 15-minute expiry cannot be waited out inside a test. Candidate, unverified: restart the web
-container with a different `GRAMPSWEB_SECRET_KEY`, which invalidates every issued token's signature
-while the credentials keep working — the client should then 401 once and re-login. Owned by T1.3;
-until it is measured the 401 path stays unit-only (17 tests cover it), which is a documented gap.
+**How does an E2E test provoke the 401-relogin path?** The candidate was a `GRAMPSWEB_SECRET_KEY`
+rotation. It was built (`GrampsInstance.restart_web`, with named volumes so the tree and the user
+database survive a container replacement) and measured — `u7_relogin_trigger`:
+
+| step | measured |
+| --- | --- |
+| restart with a rotated key | 4.7 s, tree intact (18 → 18 objects), credentials intact |
+| the old token afterwards | **422**, `{"message": "Signature verification failed"}` — *not* 401 |
+| logging in again | 200 |
+
+So the mechanism works but **answers the wrong status**: `_authed_request` re-logs in on **401**
+only, so a rotated key produces a hard error instead of the relogin path. The `[U]` therefore
+stays open with a narrower question — *what makes this server answer 401 on a previously valid
+token?* Remaining candidates, unmeasured: waiting out the 900 s expiry (nightly only), or deleting
+and re-creating the user between calls. Until one lands, the 401 path stays unit-only (17 tests
+cover it) — a documented gap, not an oversight. The 422 observation is filed as **F6**.
+
+**D12 is settled by the same task** (`u8_editor_profile`): as EDITOR, `add_person` and
+`export_tree` succeed, while `import_file` **and** `delete_all_objects` are refused by the server
+with **403**. That measurement was wrong twice before it was right, both times in the same
+direction — the wipe was rejected by our *own* argument guard (missing, then stale
+`expected_count`) and never reached the server, while the record cheerfully claimed "destructive
+refused". Every refusal is now attributed to `server-403` or `our-guard`, and only the former
+counts. **Any role assertion must name who refused.**
 
 ### What the probe corrected about itself
 
@@ -280,6 +299,7 @@ success; second run: `[200, 429, 429]`, one success, Redis holding
 | **F3** | `add_birth_name`'s docstring (1 line) is out-competed by `add_alternate_name`'s (4 lines, and it names the *maiden or married name* concept). Predicted outcome: `add_alternate_name` wins retrieval and the outcome is identical. | Stage-2 §5 prediction | If Stage 2 confirms it, the honest fix is to **delete** `add_birth_name` or document it as a deprecated alias — not to re-word it. |
 | **F4** | The two `*_bulk` docstrings contain a superset of their singles' vocabulary (`set_gender_bulk` repeats the whole enum), so `ToolSearch` may return the bulk tool above the single for a single-person task. Every class-A assertion would still pass; only the tool log shows it. | Stage-2 §5 prediction | Confirm in tier 1, then trim the bulk docstrings' vocabulary. |
 | **F5** | `main()` performs no connection attempt, so a wrong password or unreachable host yields a *successful* `initialize` and fails on the first `tools/call`. | `server.py:378-386` | Probably intended (a stdio server must not block on startup) — document it, and pin it with T3.2. |
+| **F6** | A token that fails **signature** verification answers **422**, not 401. `_authed_request` re-logs in on 401 only, so if the server's `GRAMPSWEB_SECRET_KEY` changes under a live session — a redeploy without a pinned key — every subsequent call raises a bare `HTTPError` instead of re-authenticating, until the MCP session is restarted. | `u7_relogin_trigger` `[V]`: rotated key → `422 {"message": "Signature verification failed"}`, while the same credentials still log in | Low severity (the token only lives inside one session), but the relogin condition is narrower than it looks. Decide deliberately whether `_authed_request` should treat 422-with-that-body as "re-login", or whether the honest fix is a clearer error message. |
 
 ---
 
