@@ -3464,38 +3464,14 @@ def test_delete_all_objects_async_202_polls_until_the_tree_is_empty(mock_post, m
     assert result["deleted"] == {"people": 10, "families": 4}
 
 
-@patch("gramps_client.requests.request")
-@patch("gramps_client.requests.post")
-def test_delete_all_objects_logs_in_after_the_check_and_before_the_post(mock_post, mock_request):
-    # The endpoint is a FreshProtectedResource: only a login-minted token is accepted.
-    # The relogin must sit between the precondition read and the POST — invisible otherwise.
-    mock_post.side_effect = [
-        make_response({"access_token": "first"}),
-        make_response({"access_token": "fresh"}),
-    ]
-    before = {"people": 2}
-    empty = {"people": 0}
-    mock_request.side_effect = [
-        _metadata(before),
-        make_response(None, 200),
-        _metadata(empty),
-        _metadata(empty),
-        _metadata(empty),
-    ]
-    order = MagicMock()
-    order.attach_mock(mock_post, "login")
-    order.attach_mock(mock_request, "request")
-    client = GrampsClient("https://example.test", "bot", "secret")
-
-    client.delete_all_objects(
-        expected_count=2, stability_window=2, poll_interval=0, _sleep=lambda s: None
-    )
-
-    names = [name for name, _args, _kwargs in order.mock_calls]
-    # lazy login -> counts read -> deliberate fresh login -> the delete POST
-    assert names[:4] == ["login", "request", "login", "request"]
-    assert mock_request.call_args_list[0].kwargs["headers"]["Authorization"] == "Bearer first"
-    assert mock_request.call_args_list[1].kwargs["headers"]["Authorization"] == "Bearer fresh"
+# test_delete_all_objects_logs_in_after_the_check_and_before_the_post used to sit here. It
+# pinned an unconditional second mint ("login, request, login, request") on a cold client,
+# which is the defect this release removes: /api/token/ allows one login per second per
+# source IP, so that second mint 429'd the wipe before the delete POST went out. The
+# contract it was protecting — a login between the precondition read and the POST — is now
+# split across the two cases that actually differ, in the rate-limit section at the end of
+# this file: test_delete_all_objects_reuses_the_cold_lazy_login_for_the_delete_post and
+# test_delete_all_objects_mints_a_fresh_token_on_a_warm_session.
 
 
 @patch("gramps_client.requests.request")
@@ -3787,3 +3763,509 @@ def test_delete_all_objects_deleted_is_keyed_off_before_even_if_after_drops_keys
 
     assert result["deleted"] == before
     assert result["after"] == {}
+
+
+# --- login rate limit: POST /api/token/ is 1/second per source IP (v0.5.1) ---
+
+from gramps_client import (
+    TOKEN_RETRY_MAX_WAIT,
+    TOKEN_RETRY_WAIT,
+    TokenRateLimitError,
+)
+
+
+def _rate_limited_response(retry_after=None):
+    """A 429 from POST /api/token/, with a REAL dict for headers.
+
+    _error_response leaves headers a MagicMock, whose .get() answers with another
+    MagicMock — that would coerce to a silent default and make a Retry-After test look
+    like it exercised the header branch when it never did.
+    """
+    import requests
+
+    resp = MagicMock()
+    resp.status_code = 429
+    resp.content = b""
+    resp.headers = {} if retry_after is None else {"Retry-After": retry_after}
+    resp.raise_for_status.side_effect = requests.HTTPError(response=resp)
+    return resp
+
+
+class _RecordingSleep:
+    """Collects the waits instead of spending them, so retry tests cost no wall-clock time."""
+
+    def __init__(self):
+        self.waits = []
+
+    def __call__(self, seconds):
+        self.waits.append(seconds)
+
+
+class _RateLimitedTokenEndpoint:
+    """POST /api/token/ answering the way the live server does: @limiter.limit("1/second").
+
+    A second mint inside the same (injected) second comes back 429, exactly as Gramps Web
+    answers -- gramps_webapi/api/resources/token.py:108, a fixed non-elastic window
+    anchored at the last accepted hit. Time is read from the same injected clock the
+    polling loop uses, so the test stays deterministic and costs no wall-clock time.
+    """
+
+    def __init__(self, clock, min_interval=1.0):
+        self.clock = clock
+        self.min_interval = min_interval
+        self.stamps = []
+        self._last_ok = None
+
+    def __call__(self, url, **kwargs):
+        now = self.clock.now()
+        self.stamps.append(now)
+        if self._last_ok is not None and now - self._last_ok < self.min_interval:
+            return _rate_limited_response()
+        self._last_ok = now
+        return make_response({"access_token": f"tok{len(self.stamps)}"})
+
+
+@patch("gramps_client.requests.post")
+def test_login_waits_out_a_rate_limited_token_request_and_retries(mock_post):
+    # A 429 here is a pacing problem, not an authentication problem: the budget is per
+    # source IP and shared, so the honest answer is to wait it out once, not to fail.
+    mock_post.side_effect = [_rate_limited_response(), make_response({"access_token": "tok"})]
+    slept = _RecordingSleep()
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=slept)
+
+    client._login()
+
+    assert client._access_token == "tok"
+    assert mock_post.call_count == 2
+    assert slept.waits == [TOKEN_RETRY_WAIT]
+
+
+@patch("gramps_client.requests.post")
+def test_login_raises_token_rate_limit_error_when_the_limit_persists(mock_post):
+    # One retry, not a loop: repeatedly re-authenticating is what a brute-force guard in
+    # front of a deployment counts, and a slower way to fail is still a failure.
+    mock_post.side_effect = [_rate_limited_response(), _rate_limited_response()]
+    slept = _RecordingSleep()
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=slept)
+
+    with pytest.raises(TokenRateLimitError) as excinfo:
+        client._login()
+
+    assert mock_post.call_count == 2
+    assert slept.waits == [TOKEN_RETRY_WAIT]
+    assert client._access_token is None
+    assert "429" in str(excinfo.value)
+
+
+@patch("gramps_client.requests.post")
+def test_token_rate_limit_error_is_an_http_error_carrying_its_response(mock_post):
+    # Subclassing requests.HTTPError is load-bearing, not cosmetic: delete_all_objects'
+    # 502/503/504 fallthrough inspects exc.response.status_code, and every handler that
+    # already catches HTTPError must keep catching this one.
+    import requests
+
+    mock_post.side_effect = [_rate_limited_response(), _rate_limited_response()]
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=lambda s: None)
+
+    with pytest.raises(requests.HTTPError) as excinfo:
+        client._login()
+
+    assert isinstance(excinfo.value, TokenRateLimitError)
+    assert excinfo.value.response.status_code == 429
+
+
+@patch("gramps_client.requests.post")
+def test_login_does_not_retry_rejected_credentials(mock_post):
+    # Only 429 is retried. A 403 means the credentials are wrong; retrying is useless and
+    # is exactly the pattern a brute-force guard watches for.
+    import requests
+
+    mock_post.side_effect = [_error_response(403), make_response({"access_token": "never"})]
+    slept = _RecordingSleep()
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=slept)
+
+    with pytest.raises(requests.HTTPError) as excinfo:
+        client._login()
+
+    assert not isinstance(excinfo.value, TokenRateLimitError)
+    assert mock_post.call_count == 1
+    assert slept.waits == []
+
+
+@patch("gramps_client.requests.post")
+def test_login_honours_a_short_retry_after_header(mock_post):
+    # Gramps Web sends no Retry-After (RATELIMIT_HEADERS_ENABLED is off in the shipped
+    # deployment), but a proxy in front of it may. A usable one is believed.
+    mock_post.side_effect = [
+        _rate_limited_response(retry_after="2"),
+        make_response({"access_token": "tok"}),
+    ]
+    slept = _RecordingSleep()
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=slept)
+
+    client._login()
+
+    assert slept.waits == [2.0]
+    assert client._access_token == "tok"
+
+
+@patch("gramps_client.requests.post")
+def test_login_fails_fast_when_retry_after_exceeds_the_cap(mock_post):
+    # Parking an MCP tool call for minutes is worse than telling the caller the truth now:
+    # a wait that long is not the 1/second limit this retry exists for.
+    mock_post.side_effect = [_rate_limited_response(retry_after="30")]
+    slept = _RecordingSleep()
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=slept)
+
+    with pytest.raises(TokenRateLimitError) as excinfo:
+        client._login()
+
+    assert mock_post.call_count == 1
+    assert slept.waits == []
+    message = str(excinfo.value)
+    # The message is API surface: an LLM acts on it. In THIS branch no retry happened and
+    # the limit is not the 1/second one, so it must not claim either -- telling the caller
+    # to "wait a second or two" against a 30s window just makes them loop.
+    assert "after a retry" not in message
+    assert "30" in message  # the wait the caller actually has to sit out
+    assert str(TOKEN_RETRY_MAX_WAIT) in message  # and the cap that made us refuse it
+
+
+@patch("gramps_client.requests.post")
+def test_the_retry_wait_clears_the_servers_one_second_window(mock_post):
+    # The one property that makes the retry work, asserted against a literal rather than
+    # against the constant it is checking: the limiter is a fixed window anchored on the
+    # last ACCEPTED login, so a wait of 1.0 or less lands inside the same window and
+    # earns a second 429. Comparing slept.waits to the imported TOKEN_RETRY_WAIT cannot
+    # catch that -- the assertion moves with the mutation.
+    assert TOKEN_RETRY_WAIT > 1.0
+
+    mock_post.side_effect = [_rate_limited_response(), make_response({"access_token": "tok"})]
+    slept = _RecordingSleep()
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=slept)
+
+    client._login()
+
+    assert slept.waits == [1.1]
+    assert slept.waits[0] > 1.0
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_orphan_cleanup_stops_at_a_rate_limited_login_instead_of_retrying_per_note(
+    mock_post, mock_request
+):
+    # _delete_orphaned_notes skips a failed note and carries on, which is right for a
+    # per-note transport hiccup and wrong for a rate-limited login: that is client-wide,
+    # so no later note can succeed either. Without this the retry AMPLIFIES -- every note
+    # re-enters _login for two more token POSTs and another real wait, hammering the
+    # endpoint the retry exists to be polite to, while the caller watches the tool hang.
+    mock_post.side_effect = chain([_rate_limited_response()], repeat(_rate_limited_response()))
+    mock_request.side_effect = repeat(make_response(None, 401))  # every note: token expired
+    slept = _RecordingSleep()
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=slept)
+    client._access_token = "expired"  # warm session, so no lazy login precedes the loop
+
+    deleted = client._delete_orphaned_notes(["n1", "n2", "n3", "n4", "n5"])
+
+    assert deleted == []
+    # one relogin attempt for the whole loop (two POSTs: the try and its retry), not per note
+    assert mock_post.call_count == 2
+    assert slept.waits == [1.1]
+
+
+@patch("gramps_client.requests.post")
+def test_login_falls_back_to_the_default_wait_on_an_unusable_retry_after(mock_post):
+    # HTTP-date form, or junk. The documented server limit is 1/second whatever the
+    # header says, so the constant carries it rather than the parse failing the login.
+    mock_post.side_effect = [
+        _rate_limited_response(retry_after="Wed, 21 Oct 2015 07:28:00 GMT"),
+        make_response({"access_token": "tok"}),
+    ]
+    slept = _RecordingSleep()
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=slept)
+
+    client._login()
+
+    assert slept.waits == [TOKEN_RETRY_WAIT]
+    assert client._access_token == "tok"
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_all_objects_does_not_mint_two_tokens_inside_the_rate_limit_window(
+    mock_post, mock_request
+):
+    # A stdio MCP server is spawned per session, so a cold client is the normal case.
+    # The wipe used to mint once lazily behind the precondition read and once more for
+    # the FreshProtectedResource, back to back -> the second came back 429 and the wipe
+    # died before the delete POST ever went out.
+    clock = _SleepClock()
+    token_endpoint = _RateLimitedTokenEndpoint(clock)
+    mock_post.side_effect = token_endpoint
+    before = {"people": 2}
+    empty = {"people": 0}
+    mock_request.side_effect = chain(
+        [_metadata(before), make_response(None, 200)],
+        repeat(_metadata(empty)),
+    )
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=clock.sleep)
+    assert client._access_token is None  # cold: the wipe is the session's first call
+
+    result = client.delete_all_objects(
+        expected_count=2,
+        stability_window=2,
+        poll_interval=2.0,
+        _sleep=clock.sleep,
+        _now=clock.now,
+    )
+
+    assert result["before"] == before
+    assert result["after"] == empty
+    # The delete POST actually went out -- the guarded-write shape is intact, not merely
+    # short-circuited into a green result.
+    assert mock_request.call_args_list[1].args == (
+        "POST",
+        "https://example.test/api/objects/delete/",
+    )
+    # The root cause as an invariant, not as one particular fix: never two token mints
+    # inside the limiter's window.
+    stamps = token_endpoint.stamps
+    assert all(b - a >= 1.0 for a, b in zip(stamps, stamps[1:], strict=False)), (
+        f"token POSTs at {stamps}: two mints inside the server's 1/second window"
+    )
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_all_objects_reuses_the_cold_lazy_login_for_the_delete_post(mock_post, mock_request):
+    # Replaces test_delete_all_objects_logs_in_after_the_check_and_before_the_post, which
+    # pinned the two-mint order this release exists to remove.
+    # On a cold client the precondition read has just minted a token milliseconds ago.
+    # "fresh" is a boolean JWT claim, not a time window -- POST /api/token/ sets
+    # fresh=true for the token's whole life (gramps_webapi token.py get_tokens(fresh=True)
+    # -> flask_jwt_extended _verify_token_is_fresh never consults a clock) -- so that
+    # token is already what a second login would produce, and asking for another inside
+    # the same second is precisely what the server rejects.
+    mock_post.side_effect = [
+        make_response({"access_token": "only"}),
+        make_response({"access_token": "must-not-be-used"}),
+    ]
+    before = {"people": 2}
+    empty = {"people": 0}
+    mock_request.side_effect = [
+        _metadata(before),
+        make_response(None, 200),
+        _metadata(empty),
+        _metadata(empty),
+        _metadata(empty),
+    ]
+    order = MagicMock()
+    order.attach_mock(mock_post, "login")
+    order.attach_mock(mock_request, "request")
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    client.delete_all_objects(
+        expected_count=2, stability_window=2, poll_interval=0, _sleep=lambda s: None
+    )
+
+    names = [name for name, _args, _kwargs in order.mock_calls]
+    # one lazy login -> counts read -> the delete POST, with no login in between
+    assert names[:3] == ["login", "request", "request"]
+    assert mock_post.call_count == 1
+    # the same token authorises the precondition read and the wipe
+    assert mock_request.call_args_list[0].kwargs["headers"]["Authorization"] == "Bearer only"
+    assert mock_request.call_args_list[1].kwargs["headers"]["Authorization"] == "Bearer only"
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_all_objects_mints_a_fresh_token_on_a_warm_session(mock_post, mock_request):
+    # The other half of the contract, and the reason the login is not simply deleted:
+    # on a warm session the held token can be up to 15 minutes old, and Gramps Web checks
+    # is_tree_disabled ONLY at login (token.py:127/:161, no per-request recheck). Minting
+    # here costs nothing from the rate-limit budget -- the counts read spent no mint -- and
+    # buys the recheck immediately before the destructive POST.
+    mock_post.side_effect = [
+        make_response({"access_token": "held"}),
+        make_response({"access_token": "fresh"}),
+    ]
+    before = {"people": 2}
+    empty = {"people": 0}
+    mock_request.side_effect = chain(
+        [_metadata(before), _metadata(before), make_response(None, 200)],
+        repeat(_metadata(empty)),
+    )
+    client = GrampsClient("https://example.test", "bot", "secret")
+    client.object_counts()  # an earlier tool call in the same session
+
+    client.delete_all_objects(
+        expected_count=2, stability_window=2, poll_interval=0, _sleep=lambda s: None
+    )
+
+    assert mock_post.call_count == 2
+    # The mint sits between the precondition read and the POST: the read still went out on
+    # the old token, the wipe on the new one.
+    assert mock_request.call_args_list[1].kwargs["headers"]["Authorization"] == "Bearer held"
+    assert mock_request.call_args_list[2].kwargs["headers"]["Authorization"] == "Bearer fresh"
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_all_objects_count_mismatch_costs_no_login(mock_post, mock_request):
+    # An LLM that guesses expected_count wrong, re-reads the counts and retries within the
+    # same second must not be rate-limited by the wipe's own bookkeeping: a refused wipe
+    # spends no token at all. This is what forbids hoisting the login above the guard.
+    mock_post.return_value = make_response({"access_token": "held"})
+    mock_request.side_effect = [
+        _metadata({"people": 5, "families": 2}),
+        _metadata({"people": 5, "families": 2}),
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret")
+    client.object_counts()  # an earlier tool call in the same session
+    mock_post.reset_mock()
+
+    with pytest.raises(DeleteAllCountMismatchError):
+        client.delete_all_objects(expected_count=6)
+
+    assert mock_post.call_count == 0
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_all_objects_treats_the_401_relogin_as_this_calls_fresh_login(
+    mock_post, mock_request
+):
+    # Warm session, token older than the 15-minute access-token lifetime: the precondition
+    # read 401s and _authed_request relogins. That mint IS the fresh login this call needs
+    # -- it did the is_tree_disabled recheck milliseconds ago -- so no second one follows.
+    # This is the variant the "make an unrelated call first" workaround never fixed.
+    mock_post.return_value = make_response({"access_token": "renewed"})
+    before = {"people": 2}
+    empty = {"people": 0}
+    responses = [
+        _metadata(before),  # the session's earlier call, on the original token
+        make_response(None, 401),  # precondition read: token has expired
+        _metadata(before),  # retried after the relogin
+        make_response(None, 200),  # the wipe itself
+        _metadata(empty),
+        _metadata(empty),
+        _metadata(empty),
+    ]
+    side_effect, seen = _recording_request(responses)
+    mock_request.side_effect = side_effect
+    client = GrampsClient("https://example.test", "bot", "secret")
+    client.object_counts()
+    mock_post.reset_mock()
+
+    result = client.delete_all_objects(
+        expected_count=2, stability_window=2, poll_interval=0, _sleep=lambda s: None
+    )
+
+    assert result["after"] == empty
+    assert mock_post.call_count == 1  # exactly one relogin, and no fresh login on top
+    assert seen[3]["url"] == "https://example.test/api/objects/delete/"
+    assert seen[3]["headers"]["Authorization"] == "Bearer renewed"
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_all_objects_still_retries_the_post_after_a_401(mock_post, mock_request):
+    # Dropping the second mint on a cold client leaves a narrow window: the token is valid
+    # for the counts read and gone by the time the wipe POST goes out. _authed_request's
+    # 401 retry covers it -- the 401 comes from the fresh_jwt_required decorator, before
+    # the view body, so nothing was deleted on the first attempt and the retry is safe.
+    mock_post.side_effect = [
+        make_response({"access_token": "first"}),
+        make_response({"access_token": "renewed"}),
+    ]
+    before = {"people": 2}
+    empty = {"people": 0}
+    responses = [
+        _metadata(before),  # precondition read, on the lazily minted token
+        make_response(None, 401),  # the wipe POST: token expired in between
+        make_response(None, 200),  # retried with the new token
+        _metadata(empty),
+        _metadata(empty),
+        _metadata(empty),
+    ]
+    side_effect, seen = _recording_request(responses)
+    mock_request.side_effect = side_effect
+    client = GrampsClient("https://example.test", "bot", "secret")
+
+    result = client.delete_all_objects(
+        expected_count=2, stability_window=2, poll_interval=0, _sleep=lambda s: None
+    )
+
+    assert result["after"] == empty
+    assert seen[1]["url"] == "https://example.test/api/objects/delete/"
+    assert seen[1]["headers"]["Authorization"] == "Bearer first"
+    assert seen[2]["url"] == "https://example.test/api/objects/delete/"
+    assert seen[2]["headers"]["Authorization"] == "Bearer renewed"
+    assert seen[2]["timeout"] == DELETE_ALL_HTTP_TIMEOUT
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_all_objects_survives_foreign_contention_on_the_token_endpoint(
+    mock_post, mock_request
+):
+    # The limiter is keyed by source IP, so a second MCP session or a browser tab behind
+    # the same address can take the budget for the second this wipe needs it. Removing our
+    # own second mint does not help there -- only riding out the 429 does.
+    mock_post.side_effect = [
+        _rate_limited_response(),  # a foreign client got there first
+        make_response({"access_token": "tok"}),
+    ]
+    slept = _RecordingSleep()
+    before = {"people": 2}
+    empty = {"people": 0}
+    mock_request.side_effect = chain(
+        [_metadata(before), make_response(None, 200)],
+        repeat(_metadata(empty)),
+    )
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=slept)
+
+    result = client.delete_all_objects(
+        expected_count=2, stability_window=2, poll_interval=0, _sleep=lambda s: None
+    )
+
+    assert result["after"] == empty
+    assert mock_post.call_count == 2  # one rejected, one accepted
+    assert slept.waits == [TOKEN_RETRY_WAIT]
+
+
+@patch("gramps_client.requests.request")
+@patch("gramps_client.requests.post")
+def test_delete_all_objects_wraps_a_rate_limited_relogin_during_confirmation(
+    mock_post, mock_request
+):
+    # The one place a TokenRateLimitError can surface AFTER the tree was already wiped:
+    # the token expires during the counts poll and the relogin is rate-limited. It must
+    # not reach the caller bare, and the message it does reach them with must not claim
+    # that nothing happened -- the delete landed.
+    mock_post.side_effect = [
+        make_response({"access_token": "tok"}),
+        _rate_limited_response(),
+        _rate_limited_response(),
+    ]
+    before = {"people": 2}
+    mock_request.side_effect = [
+        _metadata(before),  # precondition read
+        make_response(None, 200),  # the wipe lands
+        make_response(None, 401),  # first confirmation poll: token expired
+    ]
+    client = GrampsClient("https://example.test", "bot", "secret", _sleep=lambda s: None)
+
+    with pytest.raises(DeleteAllStateUnknownError) as excinfo:
+        client.delete_all_objects(
+            expected_count=2, stability_window=2, poll_interval=0, _sleep=lambda s: None
+        )
+
+    message = str(excinfo.value)
+    assert "TokenRateLimitError" in message
+    assert "gramps_get_object_counts" in message
+    # The wrapped text is quoted into this message verbatim, so a blanket "nothing was
+    # read or changed / just repeat the call" inside TokenRateLimitError would contradict
+    # the wrapper that carries it. It must scope its claim to the login itself.
+    assert "nothing was read or changed" not in message
