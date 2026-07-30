@@ -1,0 +1,115 @@
+# End-to-end suite
+
+The unit suite (`pytest -q`, 259 tests) is **100 % mocked** — 303 `@patch`, zero network
+calls. Everything between the client and a running system is uncovered: container, env
+wiring, MCP protocol, tool schemas, real Gramps Web. Both of this project's production
+incidents happened in exactly that gap (a `COPY`-list that missed a module, twice; the
+cold-client 429 on `gramps_delete_all_objects`).
+
+Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decision ids
+(`D1`…`D26`) and finding ids (`F1`…`F5`) below point into it.
+
+## Layout
+
+| path | what it is |
+| --- | --- |
+| `harness/docker_util.py` | subprocess/Docker plumbing and the INT tripwires |
+| `harness/gramps_instance.py` | disposable Gramps Web + Redis on its own network (D6, D14) |
+| `harness/rest.py` | the REST oracle — the only way the suite observes tree state (D3, D22) |
+| `harness/mcp_session.py` | raw JSON-RPC stdio driver against the shipped image (D21) |
+| `probes/probe_bringup.py` | the one bring-up probe (D10) |
+| `probes/observed.json` | its committed answers — **the** platform reference |
+
+Phase 0 created these. The fixture, the reset, `assertions.py`, the pytest gate and the
+test files themselves are Phase 1 and later.
+
+## Running it
+
+```bash
+.venv/bin/python tests/e2e/probes/probe_bringup.py --json              # refresh observed.json
+.venv/bin/python tests/e2e/probes/probe_bringup.py --json --verbose    # echo every record
+.venv/bin/python tests/e2e/probes/probe_bringup.py --keep --verbose    # leave the instance up
+```
+
+Needs: Docker, the `.venv` (`requests`), the images `ghcr.io/gramps-project/grampsweb:latest`,
+`redis:alpine` and `gramps-remote-mcp:latest`, plus the synthetic fixture
+(`--fixture`, default `.claude/worknotes/e2e-suite/e2e-fixture.gramps`). One run is ~2 min
+and ends with `status: complete`; exit code is 0 only if the measurements succeeded **and**
+INT was untouched.
+
+The unit suite is unaffected — none of these files is a `test_*.py`, so `pytest -q` does not
+collect them. Verified after every change: still 259 passed, no Docker.
+
+## `observed.json` — and why it is authoritative
+
+D10: there is exactly one probe, one run, one answer file. **No test may ship with an
+either/or assertion about platform behaviour once this file exists.** If a test needs to
+know a shape, it reads it here or the probe grows a measurement.
+
+Keys are grouped by what they settle: `u1`…`u6` are the open `[U]` items of the plan's §6,
+`d6`/`d11`/`d14`/`d15`/`d20` are the control mechanisms, `s5_*` re-measures the plan's
+reference table, `meta` is provenance (image ids, `mcp` version, commit) and `safety` is the
+INT evidence. Re-run the probe after a Gramps Web or `mcp` bump and diff the file — a
+changed shape is a real finding, not noise.
+
+## Reading a failure
+
+* The probe prints `== <step>` per phase, so the last header is where it died.
+* On failure it still writes `observed.json` with `"status": "failed"` and `"error"`, plus
+  whatever was measured before the failure. Look there first, not at the console.
+* Containers are torn down even on failure. To inspect, re-run with `--keep` and then:
+
+  ```bash
+  docker logs gwe2e-<runid>-web | grep ACCESS       # request log (exists only via the D6 override)
+  docker exec gwe2e-<runid>-redis redis-cli --scan --pattern 'LIMIT*'
+  ```
+
+* `McpSession` keeps the container's stderr; a `ProbeError` from a tool call quotes its tail.
+* A `429` from `/api/token/` in *harness* code means the harness spent the window — the
+  limiter is per-IP with a ~1 s TTL. `GrampsRest` enforces a 1.1 s minimum login gap (D22)
+  precisely so this never competes with the code under test.
+
+## INT safety
+
+The INT instance is `gramps-grampsweb-1` on port 5055, with `grampsweb_celery` and
+`grampsweb_redis`. It holds the real family tree; nothing here may touch it.
+
+* Every container the suite creates is named `gwe2e-<runid>-*`.
+* `assert_ours()` is the single choke point — stopping, removing or `exec`-ing anything
+  without that prefix raises instead of running. The INT names are additionally blocklisted.
+* Ports come from the kernel, never hardcoded, and 5055 is refused explicitly.
+* The probe records all three INT containers' id, start time and status **before and after**
+  the run and asserts they are identical. A mismatch is exit 1 even if everything else passed.
+* The MCP container must never run with `--network host`: it would share the limiter bucket
+  with the harness. (The INT config in the monorepo *does* use it — that config is not for
+  this suite.)
+* Reaping stale containers from *earlier* runs is Phase 1 (D18). The probe cleans up only
+  what it created, so a killed run can leave `gwe2e-*` containers behind; remove them by name.
+
+Traffic is plain HTTP to `127.0.0.1` and to container DNS names on a private bridge network.
+The disposable instance serves no TLS and holds only synthetic data — the real tree is never
+part of an E2E run, and the fixture contains invented people because this repo is public.
+
+## Scope limits (plan §3, verbatim)
+
+1. **Stage 1 proves the count guards do not fire on healthy operations. It cannot prove they
+   fire on unhealthy ones.** Eight of the nine guards in the repo trigger on a server-side
+   race that no deterministic test can create; only `delete_all_objects`' `expected_count` is
+   reachable, because it is a *caller argument*. The only mechanism that can certify guard
+   coverage is mutation testing — a manual `make e2e-mutation` target with one mutant per
+   guard, not a CI job.
+2. **The `TokenRateLimitError` *error* path stays unit-only** (17 unit tests cover it).
+   Harness and MCP container sit in different limiter buckets by design — the key includes
+   the source IP — so nothing in the harness can spend the code-under-test's token budget.
+3. **Stage 2 grades tool *selection* but cannot separate it from *lookup* failure** without
+   help: every write UC first resolves a name to a `gramps_id`. A mandatory class-B pre-gate
+   makes a run with no successful lookup call `INCONCLUSIVE-LOOKUP`, not `FAILED`.
+4. **Stage 2 measures retrieval *and* selection.** MCP tools are deferred in Claude Code:
+   the model calls `ToolSearch` with a self-authored query before it can call anything. A
+   failure may mean "the docstring was never surfaced" — still a docstring defect, but a
+   different one.
+5. **The async (Celery) profile is out of scope for this wave.** The disposable instance runs
+   the **sync** profile, where every task runs inline; the importer answers **201** and the
+   wipe **200**, never 202. That is *extra* coverage — the sync path is exactly what
+   `DELETE_ALL_HTTP_TIMEOUT`, `IMPORT_HTTP_TIMEOUT` and the `ReadTimeout` fallthrough exist
+   for, and the INT instance (with Celery) never exercises it.
