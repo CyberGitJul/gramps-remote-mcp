@@ -31,6 +31,9 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `probes/probe_bringup.py` | the one bring-up probe (D10) |
 | `probes/observed.json` | its committed answers — **the** platform reference |
 | `stubs/fake_mcp_server.py` | a rude stdio server, so the framing is testable without Docker |
+| `stubs/fake_tree.py` | an in-memory tree and a server that can be told to misreport |
+| `stubs/fake_identity.py` | …and to move identity while every count agrees (B1) |
+| `stubs/fake_write_shapes.py` | …and to write while reporting nothing about it (B5, B6) |
 | `fixtures/synthetic-tree.gramps` | the canonical tree (D2): 42 people, 21 families, 21 sources, plain XML |
 | `fixtures/cast.py` | every id and the observed counts — **no test body may carry an id literal** |
 | `fixtures/build_fixture.py` | regrows the tree with the server's own tools; run rarely |
@@ -159,9 +162,13 @@ changed shape is a real finding, not noise.
 * `McpSession` keeps the container's stderr; a `ProbeError` from a tool call quotes its tail.
 * A `ProbeError` out of `assert_guarded_write` is **your test**, not the server: the expectation
   did not cover its own claim, and the gate refuses rather than passing vacuously. The message
-  names which rule and why. Most often it is `expect_removed=` — every namespace that loses
-  objects has to say *which* ones, because a count that moved by -1 is satisfied just as well by
-  the wrong object leaving (`EVERYTHING` covers a wipe).
+  names which rule and why. The two you will meet most: `expect_removed=`, because every
+  namespace that loses objects has to say *which* ones (a count that moved by -1 is satisfied
+  just as well by the wrong object leaving; `EVERYTHING` covers a wipe), and `expect_record=`,
+  because a tool that writes has to name what the tree must say afterwards — `{namespace:
+  {gramps_id: {path: value}}}`, with `expect_person=` as the sugar for `people`. The one tool
+  whose effect is a file rather than a record is `self_report="external"`, and then the test
+  owes the file assertion itself (`BackupDir.assert_export`).
 * `people changed identity by +1/-1` means the counts were right and the objects behind them were
   not. That is a create-and-destroy pair netting to zero, which no count can see; declare it with
   `expect_added=`/`expect_removed=` if the tool is supposed to do it.
