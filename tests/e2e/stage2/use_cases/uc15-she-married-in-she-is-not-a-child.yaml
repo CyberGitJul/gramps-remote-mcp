@@ -1,0 +1,28 @@
+# uc15 — the discriminator is that the person survives. `delete_person` and `delete_family`
+# both make the wrong link disappear; only one of the three leaves him in the tree.
+id: uc15
+tier: 2
+primary: [gramps_remove_child_from_family]
+decoys: [gramps_delete_person, gramps_delete_family]
+secondary: [gramps_get_relations]
+prompt: >-
+  Gunthar Corvinstett is listed among Brunhild Corvinstett and Gisela Duvenrath's children.
+  That is wrong — he married into the family, he is not their son. Please take him out of
+  there. He must stay in the tree.
+subjects:
+  wrong_child: {namespace: people, first_name: Gunthar, surname: Corvinstett}
+  household: {namespace: families, children: [wrong_child]}
+guards: {people: [], families: [household], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc15/counts
+    kind: counts
+    deltas: {}
+  - id: uc15/he-is-no-longer-their-child
+    kind: family
+    subject: household
+    children: []
+  - id: uc15/he-is-still-in-the-tree
+    kind: person
+    subject: wrong_child
+    fields: {first_name: Gunthar, surname: Corvinstett}

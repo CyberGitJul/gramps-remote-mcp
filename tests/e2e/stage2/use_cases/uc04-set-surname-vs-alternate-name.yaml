@@ -1,0 +1,30 @@
+# uc4 — two tools, one sentence: correct the primary surname *and* keep the old spelling as an
+# alternate. `add_alternate_name` alone leaves the misspelling primary; `swap_primary_name`
+# errors (there is no alternate yet); a bulk call moves all seven Bernwalds and the guard sees
+# it. The prompt says neither "surname" nor "alternative name".
+id: uc4
+tier: 1
+primary: [gramps_set_surname]
+decoys: [gramps_set_surname_bulk, gramps_swap_primary_name]
+secondary: [gramps_add_alternate_name]
+prompt: >-
+  Corwin Bernwald's last name is misspelled — it should be "Bernwaldt" with a t at the end.
+  Please correct the record, but don't lose the old spelling "Bernwald"; he should still be
+  findable under that too.
+subjects:
+  target: {namespace: people, first_name: Corwin, surname: Bernwald}
+guards: {people: [target], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc4/counts
+    kind: counts
+    deltas: {}
+  - id: uc4/primary-corrected
+    kind: person
+    subject: target
+    fields: {surname: Bernwaldt, first_name: Corwin}
+  - id: uc4/old-spelling-kept-alongside
+    kind: alternates
+    subject: target
+    count: 1
+    contains: [{surname: Bernwald}]

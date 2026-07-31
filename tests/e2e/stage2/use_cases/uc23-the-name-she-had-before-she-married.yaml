@@ -1,0 +1,28 @@
+# uc23 — two tools produce a byte-identical record here, so no assertion can ever separate
+# them and `add_birth_name` can only ever be advisory. The prompt deliberately avoids both
+# "maiden name" (a phrase only `add_alternate_name`'s docstring uses) and "birth name".
+id: uc23
+tier: 2
+primary: [gramps_add_birth_name]
+decoys: [gramps_set_surname]
+secondary: [gramps_add_alternate_name]
+prompt: >-
+  Adalind Erlenkamp's record should also show the name she had before she married: Ravensbeck.
+  What is on there now stays as it is.
+subjects:
+  target: {namespace: people, first_name: Adalind, surname: Erlenkamp}
+guards: {people: [target], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc23/counts
+    kind: counts
+    deltas: {}
+  - id: uc23/what-was-there-stayed-primary
+    kind: person
+    subject: target
+    fields: {surname: Erlenkamp}
+  - id: uc23/exactly-one-birth-name-was-added
+    kind: alternates
+    subject: target
+    count: 1
+    contains: [{surname: Ravensbeck, name_type: Birth Name}]

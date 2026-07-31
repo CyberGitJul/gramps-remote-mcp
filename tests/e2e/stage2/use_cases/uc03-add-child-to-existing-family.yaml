@@ -1,0 +1,29 @@
+# uc3 — the household already exists, so `add_family` is the wrong route and the family count
+# is what catches it. Nothing in `add_child_to_family`'s one-line docstring says "use this
+# instead when the family is already there" — that is the thing under test.
+id: uc3
+tier: 2
+primary: [gramps_add_child_to_family]
+decoys: [gramps_add_family]
+secondary: [gramps_add_person, gramps_get_relations, gramps_get_ancestors]
+prompt: >-
+  Folkmar Bernwald had a younger brother, Erdwin, born in 1943, who never made it into the
+  records. Please get him into the tree, in the same household Folkmar belongs to.
+subjects:
+  sibling: {namespace: people, first_name: Folkmar, surname: Bernwald}
+  household: {namespace: families, children: [sibling]}
+guards: {people: [], families: [household], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc3/counts
+    kind: counts
+    deltas: {people: 1, events: 1}
+  - id: uc3/the-brother-was-created
+    kind: created
+    namespace: people
+    count: 1
+    fields: {first_name: Erdwin, surname: Bernwald, gender: 1}
+  - id: uc3/he-hangs-under-the-same-parents
+    kind: family
+    subject: household
+    children: [sibling, new:people]

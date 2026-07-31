@@ -92,6 +92,19 @@ def test_the_grade_distribution_is_the_one_the_table_gives(registered: dict[str,
     assert sum(gating(grade) for grade in grades) == 24
 
 
+def test_no_tool_is_incidental_in_the_use_case_it_is_tested_by(
+    registered: dict[str, object],
+) -> None:
+    """`secondary_in` means "reached in that use case without being what it tests". Naming its
+    own primary would say both at once — and the catalog, which mirrors these two lists into
+    every use-case file, would then have to contradict itself to agree with this one."""
+    contradictory = sorted(
+        tool for tool, slot in COVERAGE.items() if slot.primary in slot.secondary_in
+    )
+
+    assert contradictory == [], f"{contradictory} are primary and incidental in the same use case"
+
+
 def test_no_tool_is_a_decoy_in_its_own_primary(registered: dict[str, object]) -> None:
     """A decoy is a tool a use case asserts was *not* the effective route. Naming one in the
     very case it is primary for would make the use case assert both halves of a contradiction."""

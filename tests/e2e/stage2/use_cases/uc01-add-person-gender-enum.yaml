@@ -1,0 +1,20 @@
+# uc1 — `0=Female` exists only in the docstring. The prompt says "female" and never a number,
+# so a wrong enum is the finding; the birth event is what proves `birth_year` was passed on.
+id: uc1
+tier: 1
+primary: [gramps_add_person]
+prompt: >-
+  Please put my great-grandmother Ida Reventlow into the tree — she was female, and she was
+  born in 1891.
+subjects: {}
+guards: {people: [], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc1/counts
+    kind: counts
+    deltas: {people: 1, events: 1}
+  - id: uc1/one-new-person-with-her-details
+    kind: created
+    namespace: people
+    count: 1
+    fields: {first_name: Ida, surname: Reventlow, gender: 0}

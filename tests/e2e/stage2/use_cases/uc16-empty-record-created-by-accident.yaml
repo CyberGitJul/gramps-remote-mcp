@@ -1,0 +1,29 @@
+# uc16 — "get rid of that entry for good" against a household, with the person records
+# explicitly excluded. The childless target is deliberate: `delete_family` refuses a family
+# that still has children, and a remove-then-delete chain would make the failure ambiguous.
+id: uc16
+tier: 2
+primary: [gramps_delete_family]
+decoys: [gramps_delete_person, gramps_delete_all_objects]
+prompt: >-
+  There is a household entry in the tree for Bertram Aschenblum and Elvide Grausteen with
+  nobody else in it and no children. I made it by accident — please get rid of that entry for
+  good; the person records themselves are not what I mean.
+subjects:
+  husband: {namespace: people, first_name: Bertram, surname: Aschenblum}
+  wife: {namespace: people, first_name: Elvide, surname: Grausteen}
+  household: {namespace: families, members: [husband, wife]}
+guards: {people: [], families: [household], sources: []}
+maxdrop: 1
+assertions:
+  - id: uc16/counts
+    kind: counts
+    deltas: {families: -1}
+  - id: uc16/only-that-household-is-gone
+    kind: removed
+    namespace: families
+    subjects: [household]
+  - id: uc16/the-people-survive-it
+    kind: person
+    subject: husband
+    fields: {first_name: Bertram, surname: Aschenblum}

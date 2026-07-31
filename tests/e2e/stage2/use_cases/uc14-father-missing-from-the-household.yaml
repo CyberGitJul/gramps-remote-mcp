@@ -1,0 +1,28 @@
+# uc14 — the household exists and is missing a parent slot. `add_family` would build a second
+# one and leave this household untouched, which the family count catches. "father" and
+# "mother" are the parameter's own values, unavoidable in the request.
+id: uc14
+tier: 1
+primary: [gramps_set_family_parent]
+decoys: [gramps_add_family]
+secondary: [gramps_get_relations]
+prompt: >-
+  Marit Talvegaard's entry lists her mother Ingeborg but no father. Torvald Talvegaard is her
+  father — please get that on record.
+subjects:
+  child: {namespace: people, first_name: Marit, surname: Talvegaard}
+  mother: {namespace: people, first_name: Ingeborg, surname: Talvegaard}
+  father: {namespace: people, first_name: Torvald, surname: Talvegaard}
+  household: {namespace: families, children: [child]}
+guards: {people: [], families: [household], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc14/counts
+    kind: counts
+    deltas: {}
+  - id: uc14/the-empty-slot-is-filled-and-the-rest-stands
+    kind: family
+    subject: household
+    father: father
+    mother: mother
+    children: [child]

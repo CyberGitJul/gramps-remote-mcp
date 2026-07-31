@@ -1,0 +1,26 @@
+# uc9 — the prompt says "man" and "woman" and never "gender", "female" or a number. The enum
+# direction has to come out of the docstring; the twin `set_gender_bulk` would pass every
+# class-A assertion here, which is why the tool identity is not gate-eligible.
+id: uc9
+tier: 2
+primary: [gramps_set_gender]
+decoys: [gramps_set_gender_bulk]
+prompt: >-
+  Wilhelma Rosentreu is down in the tree as a man. She was a woman — my grandmother's sister.
+  Please correct her record.
+subjects:
+  target: {namespace: people, first_name: Wilhelma, surname: Rosentreu}
+guards: {people: [target], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc9/counts
+    kind: counts
+    deltas: {}
+  - id: uc9/she-is-recorded-female
+    kind: person
+    subject: target
+    fields: {gender: 0, first_name: Wilhelma, surname: Rosentreu}
+  - id: uc9/no-alternate-was-invented
+    kind: alternates
+    subject: target
+    count: 0

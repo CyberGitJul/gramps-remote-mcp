@@ -1,0 +1,25 @@
+# uc6 — the only assertion about the prose is a structural floor. Never grade an LLM's wording;
+# grade that a Source and its body note appeared and that the title is what was asked for.
+id: uc6
+tier: 2
+primary: [gramps_create_blog_post]
+prompt: >-
+  Write a short article for our family website about Dagmar Corvinstett, who was born in 1912.
+  Title it exactly: Dagmar's story. Please publish it into the tree.
+subjects:
+  about: {namespace: people, first_name: Dagmar, surname: Corvinstett}
+guards: {people: [], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc6/counts
+    kind: counts
+    deltas: {sources: 1, notes: 1}
+  - id: uc6/the-title-is-verbatim
+    kind: created
+    namespace: sources
+    count: 1
+    fields: {title: "Dagmar's story"}
+  - id: uc6/the-body-is-prose
+    kind: note_body
+    subject: new:sources
+    min_length: 40

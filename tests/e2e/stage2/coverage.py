@@ -83,21 +83,23 @@ COVERAGE: dict[str, Slot] = {
     "gramps_set_gender": Slot("uc9", A_TWIN, BEHAVIOURAL_TWIN),
     "gramps_set_surname_bulk": Slot("uc21", A_TWIN, BEHAVIOURAL_TWIN, decoy_in=("uc4",)),
     "gramps_set_gender_bulk": Slot("uc22", A_TWIN, BEHAVIOURAL_TWIN, decoy_in=("uc9",)),
-    "gramps_add_alternate_name": Slot("uc11", A, decoy_in=("uc10", "uc13")),
+    "gramps_add_alternate_name": Slot(
+        "uc11", A, decoy_in=("uc10", "uc13"), secondary_in=("uc4", "uc23")
+    ),
     "gramps_add_birth_name": Slot("uc23", B, BIRTH_NAME_TWIN),
     "gramps_swap_primary_name": Slot("uc13", A, decoy_in=("uc4", "uc10")),
     "gramps_confirm_person": Slot("uc12", A),
     "gramps_create_blog_post": Slot("uc6", A, decoy_in=("uc17",)),
     "gramps_update_blog_post": Slot("uc17", A),
     "gramps_get_blog_post": Slot("uc17", A, secondary_in=("uc18",)),
-    "gramps_list_blog_posts": Slot("uc17", A),
+    "gramps_list_blog_posts": Slot("uc17", A, secondary_in=("uc18",)),
     "gramps_delete_blog_post": Slot("uc18", A),
     "gramps_delete_person": Slot("uc5", A, decoy_in=("uc15", "uc16")),
     "gramps_delete_family": Slot("uc16", A, decoy_in=("uc15",)),
     "gramps_delete_all_objects": Slot("uc20", A, decoy_in=("uc5", "uc16", "uc18")),
     "gramps_export_tree": Slot("uc7", A, secondary_in=("uc20",)),
     "gramps_import_file": Slot("uc19", A),
-    "gramps_get_object_counts": Slot("uc20", A, secondary_in=("uc20", "uc27")),
+    "gramps_get_object_counts": Slot("uc20", A, secondary_in=("uc27",)),
     "gramps_get_relations": Slot(
         "uc8", B, SUBSTITUTABLE_READ, secondary_in=("uc3", "uc14", "uc15")
     ),

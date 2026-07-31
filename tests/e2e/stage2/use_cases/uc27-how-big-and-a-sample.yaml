@@ -1,0 +1,18 @@
+# uc27 — advisory, two tools in one cheap run. The prompt avoids "people" and "count": both are
+# owned by the tools under test, and asking with their own words would measure nothing.
+id: uc27
+tier: 3
+primary: [gramps_list_people]
+secondary: [gramps_get_object_counts]
+prompt: >-
+  How many records are in here altogether? And show me ten of the persons in it, so I get a
+  feel for what is in there.
+subjects: {}
+guards: {people: [], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc27/nothing-was-written
+    kind: tree_unchanged
+  - id: uc27/both-read-tools-were-reached-for
+    kind: tool_log
+    used_any: [gramps_list_people, gramps_get_object_counts]
