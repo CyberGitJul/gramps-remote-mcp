@@ -184,7 +184,13 @@ def test_an_unexpected_movement_of_the_tree_is_caught(rest: FakeRest, mcp: FakeM
 def test_a_failed_call_is_never_a_guarded_write(rest: FakeRest, mcp: FakeMcp) -> None:
     with pytest.raises(AssertionError, match="Unknown tool"):
         assert_guarded_write(
-            rest, mcp, "gramps_no_such_tool", {}, expect_delta={}, self_report="unguarded"
+            rest,
+            mcp,
+            "gramps_no_such_tool",
+            {},
+            expect_delta={},
+            self_report="unguarded",
+            expect_person={"I0001": {FIRST_NAME: "Cordt"}},
         )
 
 
@@ -290,7 +296,8 @@ def test_an_identity_swap_that_leaves_every_count_alone_is_caught(
 ) -> None:
     """One object destroyed and one created nets to zero in every count. `expect_delta={}` is
     the most common expectation in the suite, so this is the shape a counts-only guard would
-    wave through most often."""
+    wave through most often. The bystander named below is untouched and stays that way — the
+    identity check fires before any re-read, which is the ordering this asserts."""
     with pytest.raises(AssertionError, match="identity"):
         assert_guarded_write(
             rest,
@@ -299,6 +306,7 @@ def test_an_identity_swap_that_leaves_every_count_alone_is_caught(
             {"gramps_id": "I0002"},
             expect_delta={},
             self_report="unguarded",
+            expect_person={"I0000": {FIRST_NAME: "Alwine"}},
         )
 
 
@@ -346,22 +354,11 @@ def test_a_counts_report_that_hides_the_growth_is_caught(rest: FakeRest, mcp: Fa
         )
 
 
-def test_an_unguarded_tool_may_not_claim_a_delta(rest: FakeRest, mcp: FakeMcp) -> None:
-    """`add_child_to_family` takes no count snapshot and returns no before/after
-    (`gramps_client.py:979-998`), so the helper has nothing to cross-check — and says so
-    rather than pretending it checked."""
-    with pytest.raises(ProbeError, match="unguarded"):
-        assert_guarded_write(
-            rest,
-            mcp,
-            "gramps_add_child_to_family",
-            {"family_id": "F0000", "child_id": "I0002"},
-            expect_delta={"people": 1},
-            self_report="unguarded",
-        )
-
-
 def test_an_unguarded_tool_still_gets_the_independent_delta(rest: FakeRest, mcp: FakeMcp) -> None:
+    """The delta never came from the tool: `add_child_to_family` takes no count snapshot and
+    reports none (`gramps_client.py:979-998`). It comes from the REST snapshots around the
+    call, which is why this shape may claim one — see `test_00_record.py` for the tool that
+    could not be called at all while the helper refused to believe that."""
     written = assert_guarded_write(
         rest,
         mcp,
@@ -369,6 +366,7 @@ def test_an_unguarded_tool_still_gets_the_independent_delta(rest: FakeRest, mcp:
         {"family_id": "F0000", "child_id": "I0002"},
         expect_delta={},
         self_report="unguarded",
+        expect_record={"families": {"F0000": {"child_ref_list.0.ref": "h-I0002"}}},
     )
 
     assert written.payload == {"family_id": "F0000", "child_id": "I0002"}

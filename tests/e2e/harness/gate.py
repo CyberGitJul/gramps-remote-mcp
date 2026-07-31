@@ -18,6 +18,8 @@ claim". That is one defect seen four times, and every time it was an expectation
   unobservable — a field write moves no count, so nothing else can see it.
 * **B1** a negative `expect_delta` with no `expect_removed` asserts that *something* vanished,
   which the wrong object vanishing satisfies just as well.
+* **B5** the D16 obligation hung on the *report shape*, so the five tools that report nothing
+  were held to nothing. It hangs on "this tool writes" now, and reaches every namespace.
 """
 
 from __future__ import annotations
@@ -27,11 +29,40 @@ from typing import Any
 
 from .docker_util import ProbeError
 from .movement import EVERYTHING, Declared
-from .self_report import SelfReport
+from .self_report import KNOWN_SHAPES, SelfReport
 
-# The two shapes that write to a person and report about it — exactly the shapes a skipped PUT
-# makes invisible, so both must name what the tree has to say afterwards.
-NEEDS_EXPECT_PERSON = ("person", "bulk")
+# Every shape that writes to the tree and cannot prove it from its own report. `id`, `counts`
+# and `delete` move a count, which the oracle sees; these three do not have to.
+NEEDS_A_RECORD = ("person", "bulk", "unguarded")
+
+# `{namespace: {gramps_id: {field path: value}}}` — the merged, normalised expectation.
+Expectation = dict[str, dict[str, dict[str, Any]]]
+
+
+def merge_expectations(
+    name: str,
+    expect_person: Mapping[str, Mapping[str, Any]] | None,
+    expect_record: Mapping[str, Mapping[str, Mapping[str, Any]]] | None,
+) -> Expectation:
+    """`expect_person` is sugar for `expect_record["people"]`; normalise to one shape.
+
+    Given both for `people` the helper would have to pick a winner, and the expectation it
+    dropped would silently check nothing — so that is a usage error rather than a merge.
+    """
+    merged: Expectation = {
+        namespace: {gramps_id: dict(fields) for gramps_id, fields in dict(records or {}).items()}
+        for namespace, records in dict(expect_record or {}).items()
+    }
+    if expect_person and "people" in merged:
+        raise ProbeError(
+            f"{name}: expect_person and expect_record['people'] both name people — one of the "
+            "two would be dropped and check nothing. Put every person expectation in one of them."
+        )
+    if expect_person:
+        merged["people"] = {
+            gramps_id: dict(fields) for gramps_id, fields in dict(expect_person).items()
+        }
+    return merged
 
 
 def reject_unusable_call(
@@ -39,24 +70,28 @@ def reject_unusable_call(
     tool: str,
     arguments: Mapping[str, Any],
     self_report: SelfReport,
-    expect_person: Mapping[str, Mapping[str, Any]] | None,
-    expect_delta: Mapping[str, int],
+    wanted: Expectation,
     id_namespace: str | None,
 ) -> None:
     """The whole gate, in the order a caller meets it."""
-    if self_report in NEEDS_EXPECT_PERSON and not expect_person:
+    if self_report not in KNOWN_SHAPES:
         raise ProbeError(
-            f"{name}: self_report={self_report!r} requires expect_person={{gramps_id: {{path: value}}}} "
-            "— without that REST re-read the helper certifies a tool that never wrote (D16)"
+            f"{name}: self_report={self_report!r} is not one of {', '.join(KNOWN_SHAPES)} — the "
+            "`Literal` annotation is a hint, not a runtime check, so a misspelt shape used to "
+            "pass every branch of the cross-check without matching one. Caught before the call, "
+            "because the tool would otherwise have run for nothing."
         )
-    _reject_hollow_expectations(name, expect_person)
-    _reject_uncovered_batch(name, self_report, arguments, expect_person)
-    if self_report == "unguarded" and any(dict(expect_delta).values()):
+    if self_report in NEEDS_A_RECORD and not wanted:
         raise ProbeError(
-            f"{name}: self_report='unguarded' means the tool takes no count snapshot and reports no "
-            f"before/after ({tool} is one of three, gramps_client.py:979-1048) — assert its effect "
-            "structurally in the test instead of claiming a delta nothing corroborates"
+            f"{name}: {tool} writes to the tree and reports nothing this helper can check against "
+            f"itself (self_report={self_report!r}) — name what the tree must say afterwards, as "
+            "expect_person={gramps_id: {path: value}} or expect_record={namespace: {gramps_id: "
+            "{path: value}}}. Without that REST re-read the helper certifies a tool that never "
+            "wrote (D16). A tool whose effect is not in the tree at all is self_report='external', "
+            "and then the test owes that evidence itself."
         )
+    _reject_hollow_expectations(name, wanted)
+    _reject_uncovered_batch(name, self_report, arguments, wanted.get("people", {}))
     if self_report == "id" and not id_namespace:
         raise ProbeError(f"{name}: self_report='id' requires id_namespace= to look the new id up")
 
@@ -84,31 +119,31 @@ def reject_uncovered_removal(
             )
 
 
-def _reject_hollow_expectations(
-    name: str, expect_person: Mapping[str, Mapping[str, Any]] | None
-) -> None:
-    """An entry that names a person but no field, or a field but no falsifiable value (B2, B3)."""
-    for gramps_id, fields in dict(expect_person or {}).items():
-        if not fields:
-            raise ProbeError(
-                f"{name}: expect_person[{gramps_id!r}] names no field, so the mandatory REST "
-                "re-read compares nothing and the gate is open for a tool that never wrote — "
-                "name at least one {path: value}, or drop the person from the expectation"
-            )
-        for path, value in dict(fields).items():
-            if value is None:
+def _reject_hollow_expectations(name: str, wanted: Expectation) -> None:
+    """An entry that names a record but no field, or a field but no falsifiable value (B2, B3)."""
+    for namespace, records in wanted.items():
+        for gramps_id, fields in records.items():
+            where = f"{namespace}[{gramps_id!r}]"
+            if not fields:
                 raise ProbeError(
-                    f"{name}: expect_person[{gramps_id!r}][{path!r}] is None, which a mistyped "
-                    "path satisfies just as well as a real absence — use ABSENT to assert that "
-                    "the leaf must not exist, or name the value it must hold"
+                    f"{name}: the expectation for {where} names no field, so the mandatory REST "
+                    "re-read compares nothing and the gate is open for a tool that never wrote — "
+                    "name at least one {path: value}, or drop the record from the expectation"
                 )
+            for path, value in fields.items():
+                if value is None:
+                    raise ProbeError(
+                        f"{name}: the expectation for {where}[{path!r}] is None, which a mistyped "
+                        "path satisfies just as well as a real absence — use ABSENT to assert that "
+                        "the leaf must not exist, or name the value it must hold"
+                    )
 
 
 def _reject_uncovered_batch(
     name: str,
     self_report: SelfReport,
     arguments: Mapping[str, Any],
-    expect_person: Mapping[str, Mapping[str, Any]] | None,
+    expect_people: Mapping[str, Mapping[str, Any]],
 ) -> None:
     """Every item the batch was handed has to be named (B4).
 
@@ -131,10 +166,10 @@ def _reject_uncovered_batch(
         for item in items
         if isinstance(item, Mapping) and item.get("gramps_id") is not None
     }
-    uncovered = sorted(handed - set(expect_person or {}))
+    uncovered = sorted(handed - set(expect_people))
     if uncovered:
         raise ProbeError(
-            f"{name}: the batch was handed {sorted(handed)} but expect_person covers only "
-            f"{sorted(expect_person or {})} — {uncovered} would be written, dropped or mangled "
+            f"{name}: the batch was handed {sorted(handed)} but the expectation covers only "
+            f"{sorted(expect_people)} — {uncovered} would be written, dropped or mangled "
             "without any check noticing, because a field write moves no count"
         )

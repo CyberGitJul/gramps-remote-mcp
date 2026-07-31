@@ -148,7 +148,10 @@ def test_an_export_appears_under_the_name_this_test_chose(
     rest: GrampsRest, mcp: McpContainer, backup: BackupDir
 ) -> None:
     """D17: never "is there a file", always "did *this* file appear in this call". The default
-    name is a 1-second timestamp, so two default exports in one second overwrite each other."""
+    name is a 1-second timestamp, so two default exports in one second overwrite each other.
+
+    `external` is the shape that says the evidence is not in the tree — which is precisely why
+    the `assert_export` below is not optional decoration but the assertion this test rests on."""
     before = backup.listing()
 
     assert_guarded_write(
@@ -157,7 +160,7 @@ def test_an_export_appears_under_the_name_this_test_chose(
         "gramps_export_tree",
         {"filename": "acceptance.gramps"},
         expect_delta={},
-        self_report="unguarded",
+        self_report="external",
         timeout=300.0,
     )
 

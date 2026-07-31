@@ -82,19 +82,19 @@ BOTH = [{"gramps_id": "I0000", "gender": 2}, {"gramps_id": "I0001", "gender": 2}
 
 def test_a_field_map_without_fields_is_refused(rest: FakeRest, mcp: FakeMcp) -> None:
     """`{"I0001": {}}` is truthy, which is why "is it present" was the wrong question."""
-    with pytest.raises(ProbeError, match="expect_person"):
+    with pytest.raises(ProbeError, match="names no field"):
         write(rest, mcp, expect_person={"I0001": {}})
 
 
 def test_a_field_map_without_fields_is_refused_for_a_batch(rest: FakeRest, mcp: FakeMcp) -> None:
-    with pytest.raises(ProbeError, match="expect_person"):
+    with pytest.raises(ProbeError, match="names no field"):
         bulk(rest, mcp, BOTH, expect_person={"I0000": {}, "I0001": {}})
 
 
 def test_one_populated_entry_does_not_excuse_an_empty_one(rest: FakeRest, mcp: FakeMcp) -> None:
     """Every named person has to carry a claim, not just the first one — otherwise the batch
     case degrades to "one real expectation plus decoration"."""
-    with pytest.raises(ProbeError, match="expect_person"):
+    with pytest.raises(ProbeError, match="names no field"):
         bulk(rest, mcp, BOTH, expect_person={"I0000": {"gender": 2}, "I0001": {}})
 
 
@@ -105,7 +105,7 @@ def test_an_empty_field_map_checks_nothing_at_all(rest: FakeRest, mcp: FakeMcp) 
     mcp.call("gramps_set_first_name", {"gramps_id": "I0001", "first_name": "Reinhold"})
 
     assert rest.tree.person("I0001")["primary_name"]["first_name"] == "Cordt"
-    _assert_fields_landed("probe", rest, {"I0001": {}}, "")
+    _assert_fields_landed("probe", rest, {"people": {"I0001": {}}}, "")
 
 
 # -- B3: absence has to be said out loud ----------------------------------------------
@@ -178,7 +178,7 @@ def test_an_uncovered_item_is_invisible_to_the_re_read(rest: FakeRest, mcp: Fake
 
     assert rest.tree.person("I0000")["gender"] == 2
     assert rest.tree.person("I0001")["gender"] == 1, "premise: the tail really was dropped"
-    _assert_fields_landed("probe", rest, {"I0000": {"gender": 2}}, "")
+    _assert_fields_landed("probe", rest, {"people": {"I0000": {"gender": 2}}}, "")
 
 
 def test_a_dropped_item_is_caught_once_it_is_expected(rest: FakeRest, mcp: FakeMcp) -> None:

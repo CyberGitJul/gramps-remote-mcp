@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
 
-from .gate import reject_uncovered_removal, reject_unusable_call
+from .gate import Expectation, merge_expectations, reject_uncovered_removal, reject_unusable_call
 from .mcp_session import ToolResult
 from .movement import EVERYTHING, Declared, assert_tree_moved_exactly
 from .rest import GrampsRest
@@ -81,6 +81,7 @@ def assert_guarded_write(
     expect_delta: Mapping[str, int],
     self_report: SelfReport,
     expect_person: Mapping[str, Mapping[str, Any]] | None = None,
+    expect_record: Mapping[str, Any] | None = None,
     expect_added: Declared | None = None,
     expect_removed: Declared | None = None,
     id_namespace: str | None = None,
@@ -109,13 +110,11 @@ def assert_guarded_write(
     to every other check in this module.
     """
     name = label or f"{tool}{dict(arguments)}"
-    reject_unusable_call(
-        name, tool, arguments, self_report, expect_person, expect_delta, id_namespace
-    )
+    wanted = merge_expectations(name, expect_person, expect_record)
+    reject_unusable_call(name, tool, arguments, self_report, wanted, id_namespace)
     reject_uncovered_removal(name, expect_delta, expect_removed)
 
-    wanted = dict(expect_person or {})
-    pre = {gramps_id: _try_person(rest, gramps_id) for gramps_id in wanted}
+    pre = _read_before(rest, wanted)
 
     before = rest.snapshot()
     result = mcp.call(tool, dict(arguments), timeout=timeout)
@@ -137,7 +136,16 @@ def assert_guarded_write(
     )
     _assert_fields_landed(name, rest, wanted, note)
     assert_self_report(
-        name, self_report, reported, wanted, pre, before, after, rest, id_namespace, moved
+        name,
+        self_report,
+        reported,
+        wanted.get("people", {}),
+        pre.get("people", {}),
+        before,
+        after,
+        rest,
+        id_namespace,
+        moved,
     )
 
     return GuardedWrite(
@@ -160,18 +168,24 @@ def assert_refusal(
     *,
     contains: str,
     expect_delta: Mapping[str, int] = NO_DELTA,
+    expect_record: Mapping[str, Any] | None = None,
     expect_added: Declared | None = None,
     expect_removed: Declared | None = None,
     label: str | None = None,
     timeout: float = 60.0,
 ) -> ToolResult:
-    """A tool that must refuse: it errors, it says why in wording this repo authored, and the
-    tree did not move.
+    """A tool that must refuse: it errors, it says why in wording this repo authored, and it did
+    not do the thing it refused to do.
 
-    The third check is the one that matters. A refusal that already changed something reads
-    exactly like a clean rejection to `is_error` and to the text, and it is the worse bug.
+    The third check is the one that matters — a refusal that already changed something reads
+    exactly like a clean rejection to `is_error` and to the text, and it is the worse bug. But
+    counts and identity only show what *arrived or left*: a field written in place before the
+    raise moves neither, so "the tree did not move" is more than that evidence supports
+    (checkpoint B6). `expect_record` is how a case says which leaf must still hold its old
+    value; without it, this asserts no object was created or destroyed, and nothing more.
     """
     name = label or f"{tool}{dict(arguments)}"
+    wanted = merge_expectations(name, None, expect_record)
     reject_uncovered_removal(name, expect_delta, expect_removed)
     before = rest.snapshot()
     result = mcp.call(tool, dict(arguments), timeout=timeout)
@@ -188,24 +202,33 @@ def assert_refusal(
         expect_added=expect_added,
         expect_removed=expect_removed,
     )
+    _assert_fields_landed(name, rest, wanted, f"refusal was: {result.text[:400]}")
     return result
 
 
-def _try_person(rest: GrampsRest, gramps_id: str) -> dict[str, Any] | None:
+def _read_before(rest: GrampsRest, wanted: Expectation) -> dict[str, dict[str, Any]]:
+    """The prior state of every named record, for the shapes that report a `before` of their own."""
+    return {
+        namespace: {gramps_id: _try_record(rest, namespace, gramps_id) for gramps_id in records}
+        for namespace, records in wanted.items()
+    }
+
+
+def _try_record(rest: GrampsRest, namespace: str, gramps_id: str) -> dict[str, Any] | None:
     try:
-        return rest.person(gramps_id)
+        return rest.by_gramps_id(namespace, gramps_id)
     except LookupError:
         return None  # created by the call under test — there is no prior state to compare
 
 
-def _assert_fields_landed(
-    name: str, rest: GrampsRest, wanted: Mapping[str, Mapping[str, Any]], note: str
-) -> None:
-    """D16 itself: a claim counts only once the tree repeats it back."""
-    for gramps_id, fields in wanted.items():
-        record = rest.person(gramps_id)
-        for path, value in fields.items():
-            actual = resolve_path(record, path, default=ABSENT)
-            assert actual == value, (
-                f"{name}: the tree says {gramps_id}.{path} == {actual!r}, expected {value!r}\n  {note}"
-            )
+def _assert_fields_landed(name: str, rest: GrampsRest, wanted: Expectation, note: str) -> None:
+    """D16 itself: a claim counts only once the tree repeats it back — in any namespace."""
+    for namespace, records in wanted.items():
+        for gramps_id, fields in records.items():
+            record = rest.by_gramps_id(namespace, gramps_id)
+            for path, value in fields.items():
+                actual = resolve_path(record, path, default=ABSENT)
+                assert actual == value, (
+                    f"{name}: the tree says {namespace}/{gramps_id}.{path} == {actual!r}, "
+                    f"expected {value!r}\n  {note}"
+                )

@@ -13,8 +13,14 @@ There are five return shapes, not one (measured against the product):
   `gramps_blog.py:193-219`)
 * `id` — a bare `str` (`:900-975`, `gramps_blog.py:60-95`)
 * `counts` — `{before, after}` as `object_counts` (`:290-330`, `:500-613`)
-* `unguarded` — `add_child_to_family`, `remove_child_from_family`, `set_family_parent` take no
-  count snapshot and report no before/after at all (`:979-1048`)
+* `unguarded` — the tool writes and its report says nothing this module can check against
+  itself. There are **four** such tools, not the three the original roster named:
+  `add_child_to_family`, `remove_child_from_family`, `set_family_parent` (`:979-1048`) and
+  `update_blog_post`, whose `{gramps_id, updated}` (`gramps_blog.py:191`) is the argument plus a
+  list of the field names it says it touched. Their evidence is a mandatory `expect_record`.
+* `external` — `export_tree` (`{path, bytes, counts}`, `server.py:286`) writes a **file**. No
+  re-read of the tree can stand in for that, so the shape is declared rather than quietly
+  unchecked, and the test owes the file assertion (`BackupDir.assert_export`).
 
 None of these checks is sufficient on its own — they run *after* the independent REST re-read
 in `assertions.py`, never instead of it.
@@ -26,13 +32,19 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
+from .docker_util import ProbeError
 from .movement import Movement
 from .rest import GrampsRest
 from .wire import ABSENT, resolve_path
 
 # The name of the branch to take. There is no sniffing it from the payload: `counts` and
 # `person` are both `{before, after}` dicts, and guessing wrong means no cross-check at all.
-SelfReport = Literal["counts", "person", "bulk", "delete", "id", "unguarded"]
+SelfReport = Literal["counts", "person", "bulk", "delete", "id", "unguarded", "external"]
+
+# The two shapes with no report to cross-check. They differ in where the evidence lives, which
+# is why they are two words: `unguarded` owes a record re-read, `external` owes a file.
+NOTHING_TO_CROSS_CHECK = ("unguarded", "external")
+KNOWN_SHAPES = ("counts", "person", "bulk", "delete", "id", *NOTHING_TO_CROSS_CHECK)
 
 # Gramps ids are one letter plus digits. Measured: they start at `I0000`, not `I0001` — the
 # original use-case drafts hardcoded the wrong first id.
@@ -51,7 +63,7 @@ def assert_self_report(
     id_namespace: str | None,
     moved: Movement,
 ) -> None:
-    if self_report == "unguarded":
+    if self_report in NOTHING_TO_CROSS_CHECK:
         return
     if self_report == "person":
         _assert_person(name, reported, wanted, pre)
@@ -64,6 +76,13 @@ def assert_self_report(
     elif self_report == "id":
         namespace = str(id_namespace)
         assert_new_id_resolves(name, reported, rest, namespace, moved.added.get(namespace, []))
+    else:
+        # Falling off the chain used to mean "no cross-check", so one misspelt word — the
+        # `Literal` is a hint, not a runtime check — bought silence instead of an error.
+        raise ProbeError(
+            f"{name}: self_report={self_report!r} is not a shape this module knows "
+            f"({', '.join(KNOWN_SHAPES)}), so nothing was cross-checked at all"
+        )
 
 
 def _assert_person(

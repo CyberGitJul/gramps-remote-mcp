@@ -28,6 +28,9 @@ from stubs.fake_tree import FakeRest, FakeTree
 
 SUBJECT = "I0002"
 NEW_PERSON = "I0003"
+# `replace_person` reports nothing checkable, so it owes a record re-read (B5). The person it
+# must not touch is the honest one to name: it keeps these cases about identity.
+BYSTANDER_UNTOUCHED = {"I0000": {"primary_name.first_name": "Alwine"}}
 
 
 @pytest.fixture
@@ -207,6 +210,7 @@ def test_naming_one_side_of_a_namespace_names_both(rest: FakeRest, mcp: FakeIden
             {"gramps_id": SUBJECT},
             expect_delta={},
             self_report="unguarded",
+            expect_person=BYSTANDER_UNTOUCHED,
             expect_removed={"people": [SUBJECT]},
         )
 
@@ -242,6 +246,7 @@ def test_a_declared_churn_is_allowed(rest: FakeRest, mcp: FakeIdentityMcp) -> No
         {"gramps_id": SUBJECT},
         expect_delta={},
         self_report="unguarded",
+        expect_person=BYSTANDER_UNTOUCHED,
         expect_removed={"people": [SUBJECT]},
         expect_added={"people": [NEW_PERSON]},
     )
@@ -259,12 +264,16 @@ def test_a_wipe_may_declare_everything_it_removed(rest: FakeRest, mcp: FakeIdent
         mcp,
         "gramps_delete_all_objects",
         {"confirm": True, "expected_count": total},
-        expect_delta={"people": -3, "families": -1},
+        expect_delta={"people": -3, "families": -1, "sources": -1},
         self_report="counts",
-        expect_removed={"people": EVERYTHING, "families": EVERYTHING},
+        expect_removed={
+            "people": EVERYTHING,
+            "families": EVERYTHING,
+            "sources": EVERYTHING,
+        },
     )
 
-    assert written.after == {"people": 0, "families": 0, "notes": 0, "tags": 0}
+    assert written.after == {"people": 0, "families": 0, "sources": 0, "notes": 0, "tags": 0}
 
 
 # -- the identity projection itself ----------------------------------------------------

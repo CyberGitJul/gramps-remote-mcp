@@ -59,6 +59,16 @@ class FakeTree:
             "families": {
                 "F0000": {"handle": "h-F0000", "gramps_id": "F0000", "child_ref_list": []}
             },
+            # A blog post is a Source, and its body lives in a Note it may not have yet
+            # (`gramps_blog.py:175-186`) — which is why updating a body can move a count.
+            "sources": {
+                "S0000": {
+                    "handle": "h-S0000",
+                    "gramps_id": "S0000",
+                    "title": "Blog",
+                    "note_list": [],
+                }
+            },
             "notes": {},
             "tags": {},
         }
