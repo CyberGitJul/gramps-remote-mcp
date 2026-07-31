@@ -15,6 +15,11 @@ So `before != after` is not used here at all. What replaces it:
 3. and only then a cross-check that the tool's story matches what the tree says
    (`self_report.py`, one branch per return shape).
 
+Step 2 only means anything if the expectation is falsifiable, which "an argument was passed"
+does not guarantee. `_reject_unusable_call` therefore checks coverage, not presence: no empty
+field map, no `None` where `ABSENT` is meant, and no `bulk` call that leaves part of its own
+`items` unnamed. Each of those three used to open the gate and then compare nothing.
+
 `assert_refusal` is deliberately the *single* helper that looks at error text, and its
 `contains=` must be a fragment authored in this repo — `vocabulary.py` enforces that
 mechanically, because asserting framework wording makes one `pip install -U` a mass-red.
@@ -31,9 +36,10 @@ from .docker_util import ProbeError
 from .mcp_session import ToolResult
 from .rest import GrampsRest
 from .self_report import assert_self_report
-from .wire import payload, payload_list, resolve_path
+from .wire import ABSENT, payload, payload_list, resolve_path
 
 __all__ = [
+    "ABSENT",
     "GuardedWrite",
     "NO_DELTA",
     "SelfReport",
@@ -83,9 +89,18 @@ def assert_guarded_write(
     `expect_person` maps `gramps_id -> {field path: value}` and is **mandatory** for the
     `person` and `bulk` shapes. `self_report` names the return shape, because there are five
     of them and a caller who guesses silently gets no cross-check at all.
+
+    "Mandatory" means covering, not merely present — three ways it used to be hollow are now
+    usage errors (checkpoint B2-B4): an entry with no field (`{"I0001": {}}`) checks nothing
+    behind the open gate; an expected `None` is satisfied by a mistyped path just as well as by
+    a real absence, so absence is written `ABSENT`; and a `bulk` call must name **every** id in
+    `arguments["items"]`, because a field write moves no count and an unnamed item is invisible
+    to every other check in this module.
     """
     name = label or f"{tool}{dict(arguments)}"
-    _reject_unusable_call(name, tool, self_report, expect_person, expect_delta, id_namespace)
+    _reject_unusable_call(
+        name, tool, arguments, self_report, expect_person, expect_delta, id_namespace
+    )
 
     wanted = dict(expect_person or {})
     pre = {gramps_id: _try_person(rest, gramps_id) for gramps_id in wanted}
@@ -174,17 +189,25 @@ def assert_tree_moved_exactly(
 def _reject_unusable_call(
     name: str,
     tool: str,
+    arguments: Mapping[str, Any],
     self_report: SelfReport,
     expect_person: Mapping[str, Mapping[str, Any]] | None,
     expect_delta: Mapping[str, int],
     id_namespace: str | None,
 ) -> None:
-    """Usage errors are raised, not asserted: a misused helper must never read as a pass."""
+    """Usage errors are raised, not asserted: a misused helper must never read as a pass.
+
+    The question here is not "was an argument passed" but "does the argument cover the claim".
+    The three are the same defect seen three times: an expectation that is *present* and checks
+    *nothing* opens the gate and then compares nothing behind it.
+    """
     if self_report in NEEDS_EXPECT_PERSON and not expect_person:
         raise ProbeError(
             f"{name}: self_report={self_report!r} requires expect_person={{gramps_id: {{path: value}}}} "
             "— without that REST re-read the helper certifies a tool that never wrote (D16)"
         )
+    _reject_hollow_expectations(name, expect_person)
+    _reject_uncovered_batch(name, self_report, arguments, expect_person)
     if self_report == "unguarded" and any(dict(expect_delta).values()):
         raise ProbeError(
             f"{name}: self_report='unguarded' means the tool takes no count snapshot and reports no "
@@ -193,6 +216,62 @@ def _reject_unusable_call(
         )
     if self_report == "id" and not id_namespace:
         raise ProbeError(f"{name}: self_report='id' requires id_namespace= to look the new id up")
+
+
+def _reject_hollow_expectations(
+    name: str, expect_person: Mapping[str, Mapping[str, Any]] | None
+) -> None:
+    """An entry that names a person but no field, or a field but no falsifiable value (B2, B3)."""
+    for gramps_id, fields in dict(expect_person or {}).items():
+        if not fields:
+            raise ProbeError(
+                f"{name}: expect_person[{gramps_id!r}] names no field, so the mandatory REST "
+                "re-read compares nothing and the gate is open for a tool that never wrote — "
+                "name at least one {path: value}, or drop the person from the expectation"
+            )
+        for path, value in dict(fields).items():
+            if value is None:
+                raise ProbeError(
+                    f"{name}: expect_person[{gramps_id!r}][{path!r}] is None, which a mistyped "
+                    "path satisfies just as well as a real absence — use ABSENT to assert that "
+                    "the leaf must not exist, or name the value it must hold"
+                )
+
+
+def _reject_uncovered_batch(
+    name: str,
+    self_report: SelfReport,
+    arguments: Mapping[str, Any],
+    expect_person: Mapping[str, Mapping[str, Any]] | None,
+) -> None:
+    """Every item the batch was handed has to be named (B4).
+
+    A field write moves no counts, `count_guard_ok` is true by construction, and the fingerprint
+    is identity-blind — so an item the expectation does not name is unobservable by every other
+    check in this module. `_bulk_write` is best-effort by contract (`server.py:56-58`), which is
+    exactly why the coverage has to come from the caller.
+    """
+    if self_report != "bulk":
+        return
+    if "items" not in arguments:
+        raise ProbeError(
+            f"{name}: self_report='bulk' but the call has no 'items' argument, so this rule has "
+            "nothing to compare and would pass anything — teach it where this tool keeps its "
+            "batch rather than letting the coverage check quietly become a no-op"
+        )
+    items = arguments.get("items") or []
+    handed = {
+        item["gramps_id"]
+        for item in items
+        if isinstance(item, Mapping) and item.get("gramps_id") is not None
+    }
+    uncovered = sorted(handed - set(expect_person or {}))
+    if uncovered:
+        raise ProbeError(
+            f"{name}: the batch was handed {sorted(handed)} but expect_person covers only "
+            f"{sorted(expect_person or {})} — {uncovered} would be written, dropped or mangled "
+            "without any check noticing, because a field write moves no count"
+        )
 
 
 def _try_person(rest: GrampsRest, gramps_id: str) -> dict[str, Any] | None:
@@ -209,7 +288,7 @@ def _assert_fields_landed(
     for gramps_id, fields in wanted.items():
         record = rest.person(gramps_id)
         for path, value in fields.items():
-            actual = resolve_path(record, path, default=None)
+            actual = resolve_path(record, path, default=ABSENT)
             assert actual == value, (
                 f"{name}: the tree says {gramps_id}.{path} == {actual!r}, expected {value!r}\n  {note}"
             )

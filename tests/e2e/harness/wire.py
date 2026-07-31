@@ -18,6 +18,24 @@ from .mcp_session import ToolResult
 _MISSING = object()
 
 
+class _Absent:
+    """Sentinel for "this leaf must not exist", as an expected value.
+
+    `None` cannot carry that meaning: `resolve_path` hands `None` back for a missing key, an
+    out-of-range index and a walk through a scalar alike, so `{"primary_name.frist_name": None}`
+    — a typo — compares `None == None` and passes in both halves of the check. Absence has to be
+    said out loud to be falsifiable.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "ABSENT"
+
+
+ABSENT = _Absent()
+
+
 def payload(result: ToolResult) -> Any:
     """The tool's own report, from wherever its return type puts it on the wire.
 

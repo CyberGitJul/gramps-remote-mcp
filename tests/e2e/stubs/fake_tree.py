@@ -129,6 +129,10 @@ class FakeMcp:
         # The bulk guard is reported rather than raised (`gramps_client.py:737-743`), so a
         # batch can hand back `count_guard_ok: False` and still look like a successful call.
         self.break_bulk_guard = False
+        # A batch that writes its first item and silently drops the rest — without raising, so
+        # `errors` stays empty and `count_guard_ok` stays true. A field write moves no counts,
+        # so nothing outside `expect_person` can see the missing four fifths of the work.
+        self.drop_bulk_tail = False
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     # -- wire shapes (measured) --------------------------------------------------
@@ -201,8 +205,9 @@ class FakeMcp:
 
     def _t_gramps_set_gender_bulk(self, items: list[dict[str, Any]]) -> ToolResult:
         count_before = len(self.tree.namespaces["people"])
+        handled = items[:1] if self.drop_bulk_tail else items
         results = []
-        for item in items:
+        for item in handled:
 
             def mutate(person: dict[str, Any], gender: int = item["gender"]) -> None:
                 person["gender"] = gender

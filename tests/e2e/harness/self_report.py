@@ -27,7 +27,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from .rest import GrampsRest
-from .wire import resolve_path
+from .wire import ABSENT, resolve_path
 
 # Gramps ids are one letter plus digits. Measured: they start at `I0000`, not `I0001` — the
 # original use-case drafts hardcoded the wrong first id.
@@ -125,16 +125,19 @@ def assert_story_matches(
     The product snapshots the person it fetched from `/api/people/?gramps_id=…` while the
     oracle re-reads `/api/people/<handle>`; comparing those two dicts wholesale would grade the
     difference between two server projections instead of the write.
+
+    A leaf that is not there resolves to `ABSENT`, never to `None`: as a default, `None` made a
+    mistyped path compare equal to an expected `None` and pass in both halves of the check.
     """
     for path, value in fields.items():
         if was is not None:
-            said_before = resolve_path(reported["before"], path, default=None)
-            actually_was = resolve_path(was, path, default=None)
+            said_before = resolve_path(reported["before"], path, default=ABSENT)
+            actually_was = resolve_path(was, path, default=ABSENT)
             assert said_before == actually_was, (
                 f"{name}: {gramps_id}.{path} before the call was {actually_was!r}, "
                 f"the tool reported before={said_before!r}"
             )
-        said_after = resolve_path(reported["after"], path, default=None)
+        said_after = resolve_path(reported["after"], path, default=ABSENT)
         assert said_after == value, (
             f"{name}: the tool reported after {gramps_id}.{path} == {said_after!r}, expected {value!r}"
         )
