@@ -1,4 +1,16 @@
 # Tooling configuration only (this project is run from source, not packaged).
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The e2e tree needs Docker and a live Gramps Web instance, so it must never run in a plain
+# `pytest -q`. Two things keep it out: this deselection, and tests/e2e/conftest.py stamping
+# the marker on every item it collects — so a test that forgets the marker is still gated.
+addopts = "-m 'not e2e'"
+markers = [
+  "e2e: needs Docker and a disposable Gramps Web instance (auto-stamped under tests/e2e)",
+  "refusal: negative or error-text case — nightly only; highest rot, least signal per second",
+  "upstream_pin: grades Gramps Web rather than this repo — excluded from the floating-digest leg",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

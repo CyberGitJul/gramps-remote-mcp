@@ -1,0 +1,486 @@
+{
+  "meta": {
+    "runid": "e94dce4f",
+    "probe": "tests/e2e/probes/probe_bringup.py",
+    "plan": "docs/superpowers/plans/2026-07-30-e2e-test-suite.md",
+    "started_utc": "2026-07-30T18:32:04Z",
+    "git_commit": "79240d810650b92aa1b50c3668879290c900b334",
+    "git_branch": "test/e2e-suite-phase-0",
+    "grampsweb_image": "ghcr.io/gramps-project/grampsweb:latest",
+    "grampsweb_image_id": "sha256:dfaaf42c4dcb2c919b4cece188f23385e860d118b8e30dd1a1d5d3bc39b0d5d2",
+    "mcp_image": "gramps-remote-mcp:latest",
+    "mcp_image_id": "sha256:332e73be8b3a4aa62db4e2d7c00522b08c37409d02cd0cfb106d8b168cdd62e8",
+    "mcp_lib_version": "1.28.1",
+    "python": "3.14.4",
+    "gunicorn_cmd_override": "gunicorn -w ${GUNICORN_NUM_WORKERS:-8} -b 0.0.0.0:5000 gramps_webapi.wsgi:app --timeout ${GUNICORN_TIMEOUT:-300} --limit-request-line 8190 --access-logfile - --access-logformat \"ACCESS %(h)s %(r)s %(s)s\"",
+    "client_protocol_version": "2025-06-18"
+  },
+  "s5_readiness": {
+    "signal": "GET /api/openapi.json == 200",
+    "seconds": 5.58,
+    "budget_s": 30.0,
+    "reference_2026_07_30": 5.7,
+    "port": 58459
+  },
+  "s5_bootstrap": {
+    "create_owner_before_first_user": 200,
+    "create_owner_after_user_add": 405,
+    "owner_add": {
+      "rc": 0,
+      "stdout": "",
+      "stderr": "(__main__.py:19): Gtk-CRITICAL **: 18:32:13.291: gtk_icon_theme_get_for_screen: assertion 'GDK_IS_SCREEN (screen)' failed\n[2026-07-30 18:32:13,996] INFO in __main__: Adding user owner ..."
+    },
+    "editor_add": {
+      "rc": 0,
+      "stdout": "",
+      "stderr": "(__main__.py:25): Gtk-CRITICAL **: 18:32:16.196: gtk_icon_theme_get_for_screen: assertion 'GDK_IS_SCREEN (screen)' failed\n[2026-07-30 18:32:16,852] INFO in __main__: Adding user editor ..."
+    },
+    "metadata_unauthenticated": 401,
+    "note": "rc is the only success signal; the Gtk-CRITICAL on stderr is harmless"
+  },
+  "s5_seed": {
+    "fixture": "e2e-fixture.gramps",
+    "fixture_bytes": 1159,
+    "import_seconds": 7.96,
+    "import_is_error": false,
+    "import_text_head": "{\n  \"before\": {\n    \"citations\": 0,\n    \"events\": 0,\n    \"families\": 0,\n    \"media\": 0,\n    \"notes\": 0,\n    \"people\": 0,\n    \"places\": 0,\n    \"repositories\": 0,\n    \"sources\": 0,\n    \"tags\": 0\n  },\n  ",
+    "object_counts": {
+      "citations": 0,
+      "events": 4,
+      "families": 1,
+      "media": 0,
+      "notes": 1,
+      "people": 5,
+      "places": 0,
+      "repositories": 0,
+      "sources": 1,
+      "tags": 2
+    },
+    "object_counts_keys": [
+      "citations",
+      "events",
+      "families",
+      "media",
+      "notes",
+      "people",
+      "places",
+      "repositories",
+      "sources",
+      "tags"
+    ],
+    "total": 14,
+    "tags_is_a_counted_namespace": true
+  },
+  "u1_name_type_shape": {
+    "gramps_ids_present": [
+      "I0000",
+      "I0001",
+      "I0002",
+      "I0003",
+      "I0004"
+    ],
+    "ids_start_at": "I0000",
+    "probe_person": "I0000",
+    "primary_name_type_value": "Birth Name",
+    "primary_name_type_shape": "bare_string",
+    "alternate_name_type_values": [
+      "Married Name",
+      "Birth Name"
+    ],
+    "alternate_name_type_shapes": [
+      "bare_string",
+      "bare_string"
+    ],
+    "assert_on": "person['primary_name']['type']",
+    "add_alternate_name_is_error": false,
+    "add_birth_name_is_error": false
+  },
+  "u3_structured_content": {
+    "per_tool": {
+      "gramps_add_person": {
+        "return_annotation": "str",
+        "is_error": false,
+        "has_structured_content": true,
+        "structured_type": "dict",
+        "structured_keys": [
+          "result"
+        ],
+        "content_types": [
+          "text"
+        ],
+        "result_keys": [
+          "content",
+          "isError",
+          "structuredContent"
+        ]
+      },
+      "gramps_add_family": {
+        "return_annotation": "str",
+        "is_error": false,
+        "has_structured_content": true,
+        "structured_type": "dict",
+        "structured_keys": [
+          "result"
+        ],
+        "content_types": [
+          "text"
+        ],
+        "result_keys": [
+          "content",
+          "isError",
+          "structuredContent"
+        ]
+      },
+      "gramps_create_blog_post": {
+        "return_annotation": "str",
+        "is_error": false,
+        "has_structured_content": true,
+        "structured_type": "dict",
+        "structured_keys": [
+          "result"
+        ],
+        "content_types": [
+          "text"
+        ],
+        "result_keys": [
+          "content",
+          "isError",
+          "structuredContent"
+        ]
+      },
+      "gramps_get_object_counts": {
+        "return_annotation": "dict",
+        "is_error": false,
+        "has_structured_content": false,
+        "structured_type": null,
+        "structured_keys": null,
+        "content_types": [
+          "text"
+        ],
+        "result_keys": [
+          "content",
+          "isError"
+        ]
+      },
+      "gramps_list_people": {
+        "return_annotation": "list",
+        "is_error": false,
+        "has_structured_content": false,
+        "structured_type": null,
+        "structured_keys": null,
+        "content_types": [
+          "text",
+          "text",
+          "text",
+          "text",
+          "text",
+          "text"
+        ],
+        "result_keys": [
+          "content",
+          "isError"
+        ]
+      }
+    },
+    "conclusion": "guard every structuredContent assertion with `structured is not None`",
+    "counts_after": {
+      "citations": 0,
+      "events": 4,
+      "families": 2,
+      "media": 0,
+      "notes": 2,
+      "people": 6,
+      "places": 0,
+      "repositories": 0,
+      "sources": 2,
+      "tags": 2
+    }
+  },
+  "u4_tools_list": {
+    "count_destructive_off": 27,
+    "count_destructive_on": 31,
+    "destructive_only": [
+      "gramps_delete_all_objects",
+      "gramps_delete_blog_post",
+      "gramps_delete_family",
+      "gramps_delete_person"
+    ],
+    "next_cursor_present": false,
+    "listing_keys": [
+      "tools"
+    ],
+    "conclusion": "single page at 31 tools",
+    "tool_entry_keys": [
+      "description",
+      "inputSchema",
+      "name"
+    ],
+    "every_tool_has_output_schema": false,
+    "tools_with_output_schema": 3
+  },
+  "d20_unregistered_tool": {
+    "called": "gramps_delete_all_objects with GRAMPS_ENABLE_DESTRUCTIVE absent",
+    "jsonrpc_error": false,
+    "is_error": true,
+    "text": "Unknown tool: gramps_delete_all_objects",
+    "conclusion": "successful result with isError=true — never a JSON-RPC error object"
+  },
+  "u5_put_semantics": {
+    "put_without_trailing_slash": 200,
+    "put_with_trailing_slash": 405,
+    "partial_put_status": 200,
+    "partial_put_body_keys": [
+      "gender",
+      "gramps_id",
+      "handle"
+    ],
+    "before": {
+      "tag_list_len": 1,
+      "event_ref_list_len": 1,
+      "has_primary_name": true,
+      "surname": "Barghoorn"
+    },
+    "after_partial_put": {
+      "tag_list_len": 0,
+      "event_ref_list_len": 0,
+      "has_primary_name": true,
+      "surname": null
+    },
+    "partial_put_blanks_omitted_fields": true,
+    "conclusion": "read-modify-write the full record (put_merge); never send a partial body",
+    "error_head": null
+  },
+  "u6_celery": {
+    "evidence": "read-only docker inspect of the running INT worker",
+    "int_worker_cmd": "[\"celery\",\"-A\",\"gramps_webapi.celery\",\"worker\",\"--loglevel=INFO\",\"--concurrency=2\"]",
+    "int_worker_entrypoint": "[\"/docker-entrypoint.sh\"]",
+    "int_worker_image": "ghcr.io/gramps-project/grampsweb:latest",
+    "celery_app_module": "/venv/lib/python3.13/site-packages/gramps_webapi/celery.py",
+    "celery_binary": "/venv/bin/celery",
+    "note": "Phase 5 only — this wave runs the sync profile (§3.5)"
+  },
+  "d6_access_log": {
+    "cmd_override_applied": true,
+    "access_lines": 47,
+    "token_post_lines": 4,
+    "by_ip": {
+      "172.24.0.4": 3,
+      "172.24.0.1": 2
+    },
+    "default_cmd_has_access_log": false,
+    "conclusion": "token POSTs are countable only with the D6 CMD override"
+  },
+  "d15_token_oracle": {
+    "single_post_visible": true,
+    "new_lines": [
+      "ACCESS 172.24.0.1 POST /api/token/ HTTP/1.1 200"
+    ],
+    "attributed_ips": [
+      "172.24.0.1"
+    ],
+    "status_200_present": true,
+    "conclusion": "positive control passed — a count(ip)==0 assertion is not vacuous"
+  },
+  "d14_limiter_burst": {
+    "burst_size": 3,
+    "statuses": [
+      200,
+      429,
+      429
+    ],
+    "burst_ms": 132,
+    "sharp": true,
+    "successes": 1,
+    "one_success_control": true,
+    "redis_limit_keys": [
+      "LIMITS:LIMITER/172.24.0.1/api.token/1/1/second"
+    ],
+    "redis_control_non_empty": true,
+    "followup_status": 429,
+    "retry_after_header": null,
+    "reference_2026_07_30": "10 POSTs in 152 ms -> exactly 1 success"
+  },
+  "u2_jwt": {
+    "default_lifetime_s": 900,
+    "fresh_claim": true,
+    "fresh_claim_type": "bool",
+    "claims": [
+      "csrf",
+      "exp",
+      "fresh",
+      "iat",
+      "jti",
+      "nbf",
+      "permissions",
+      "sub",
+      "tree",
+      "type"
+    ],
+    "env_var": "GRAMPSWEB_JWT_ACCESS_TOKEN_EXPIRES",
+    "env_var_override_s": 45,
+    "env_var_effective_lifetime_s": 900,
+    "env_var_honoured": false,
+    "env_var_error": null,
+    "source_hits": [
+      "/app/src/gramps_webapi/config.py:117:    JWT_ACCESS_TOKEN_EXPIRES = datetime.timedelta(minutes=15)",
+      "/app/src/build/lib/gramps_webapi/config.py:117:    JWT_ACCESS_TOKEN_EXPIRES = datetime.timedelta(minutes=15)"
+    ]
+  },
+  "u7_relogin_trigger": {
+    "method": "restart the web container with a rotated GRAMPSWEB_SECRET_KEY",
+    "restart_seconds": 5.25,
+    "stale_token_status": 422,
+    "stale_token_rejected": false,
+    "stale_token_body_head": "{\"message\":\"Signature verification failed\"}\n",
+    "relogin_status": 200,
+    "credentials_survived": true,
+    "relogin_error": null,
+    "stale_token_is_401": false,
+    "consequence": "the product re-logs in on 401 only; a signature failure answers 422, so a rotated secret key does NOT exercise the relogin path",
+    "counts_before": 18,
+    "counts_after": 18,
+    "tree_survived": true,
+    "usable_as_a_test": false
+  },
+  "s5_shapes": {
+    "note_text_value": {
+      "string": "Otto Barghoorn was born in 1912 in a small village and later moved to the city, where he worked as a carpenter for four decades.",
+      "tags": []
+    },
+    "note_text_shape": "object:['string', 'tags']",
+    "assert_on": "note['text']['string']",
+    "export_is_error": false,
+    "export_magic_bytes": "1f8b",
+    "export_is_gzip": true,
+    "export_size": 1295
+  },
+  "s5_import_additivity": {
+    "second_import_is_error": false,
+    "second_import_seconds": 6.76,
+    "total_before": 18,
+    "total_after": 32,
+    "people_before": 6,
+    "people_after": 11,
+    "additive": true,
+    "finding": "F2 — a silent additive retry duplicates the tree"
+  },
+  "d11_confirm_coercion": {
+    "sent": {
+      "confirm": "yes",
+      "expected_count": 32
+    },
+    "is_error": false,
+    "text_head": "{\n  \"before\": {\n    \"citations\": 0,\n    \"events\": 8,\n    \"families\": 3,\n    \"media\": 0,\n    \"notes\": 3,\n    \"people\": 11,\n    \"places\": 0,\n    \"repositories\": 0,\n    \"sources\": 3,\n    \"tags\": 4\n  },\n ",
+    "total_after": 0,
+    "armed_destructive_tool": true,
+    "finding": "F1 — pydantic coerces 'yes' to True before `confirm is not True` runs"
+  },
+  "u8_editor_profile": {
+    "role": "EDITOR (3)",
+    "per_tool": {
+      "gramps_add_person": {
+        "arguments": {
+          "first_name": "Editor",
+          "surname": "Probe",
+          "gender": 1
+        },
+        "is_error": false,
+        "text_head": "I0011",
+        "refused_by": null
+      },
+      "gramps_export_tree": {
+        "arguments": {
+          "filename": "editor-probe.gramps"
+        },
+        "is_error": false,
+        "text_head": "{\n  \"path\": \"/data/editor-probe.gramps\",\n  \"bytes\": 485,\n  \"counts\": {\n    \"citations\": 0,\n    \"events\": 0,\n    \"families\": 0,\n    \"media\": 0,\n    \"notes\": 0,\n    \"people\": 1,\n    \"places\": 0,\n    \"re",
+        "refused_by": null
+      },
+      "gramps_import_file": {
+        "arguments": {
+          "filename": "editor-probe.gramps"
+        },
+        "is_error": true,
+        "text_head": "Error executing tool gramps_import_file: 403 Client Error: FORBIDDEN for url: http://gwe2e-e94dce4f-web:5000/api/importers/gramps/file",
+        "refused_by": "server-403"
+      },
+      "gramps_delete_all_objects": {
+        "arguments": {
+          "confirm": true,
+          "expected_count": 2
+        },
+        "is_error": true,
+        "text_head": "Error executing tool gramps_delete_all_objects: 403 Client Error: FORBIDDEN for url: http://gwe2e-e94dce4f-web:5000/api/objects/delete/",
+        "refused_by": "server-403"
+      }
+    },
+    "everyday_writes_allowed": true,
+    "destructive_refused_by_server": [
+      "gramps_delete_all_objects",
+      "gramps_import_file"
+    ],
+    "matches_d12_expectation": true,
+    "note": "a refusal from our own argument guard is no evidence about the role"
+  },
+  "safety": {
+    "int_containers_before": [
+      {
+        "name": "gramps-grampsweb-1",
+        "inspect": "8ff6a04e6c896d4cedee4cc8ed80f4163d7a05197d522f2a40513c2d9c1b7a9f 2026-07-30T05:36:37.102966482Z running"
+      },
+      {
+        "name": "grampsweb_celery",
+        "inspect": "54ce66a24c2252efe490bcbe56fb26ab9f8b668a8c5045b72b4f441abe665d2b 2026-07-30T05:36:37.107192504Z running"
+      },
+      {
+        "name": "grampsweb_redis",
+        "inspect": "3dd8161f9d2962fac7c4abe8aa1b8f8c309ae42e2b9eabaff9ded05cc4346b07 2026-07-30T05:36:37.097437062Z running"
+      }
+    ],
+    "int_containers_after": [
+      {
+        "name": "gramps-grampsweb-1",
+        "inspect": "8ff6a04e6c896d4cedee4cc8ed80f4163d7a05197d522f2a40513c2d9c1b7a9f 2026-07-30T05:36:37.102966482Z running"
+      },
+      {
+        "name": "grampsweb_celery",
+        "inspect": "54ce66a24c2252efe490bcbe56fb26ab9f8b668a8c5045b72b4f441abe665d2b 2026-07-30T05:36:37.107192504Z running"
+      },
+      {
+        "name": "grampsweb_redis",
+        "inspect": "3dd8161f9d2962fac7c4abe8aa1b8f8c309ae42e2b9eabaff9ded05cc4346b07 2026-07-30T05:36:37.097437062Z running"
+      }
+    ],
+    "int_untouched": true,
+    "created": [
+      "network:gwe2e-e94dce4f-net",
+      "volume:gwe2e-e94dce4f-users",
+      "volume:gwe2e-e94dce4f-data",
+      "container:gwe2e-e94dce4f-redis",
+      "container:gwe2e-e94dce4f-web",
+      "network:gwe2e-e94dce4f-jwt-net",
+      "volume:gwe2e-e94dce4f-jwt-users",
+      "volume:gwe2e-e94dce4f-jwt-data",
+      "container:gwe2e-e94dce4f-jwt-web"
+    ],
+    "removed": [
+      "gwe2e-e94dce4f-web",
+      "gwe2e-e94dce4f-redis",
+      "gwe2e-e94dce4f-net",
+      "gwe2e-e94dce4f-users",
+      "gwe2e-e94dce4f-data",
+      "gwe2e-e94dce4f-jwt-web",
+      "gwe2e-e94dce4f-jwt-net",
+      "gwe2e-e94dce4f-jwt-users",
+      "gwe2e-e94dce4f-jwt-data"
+    ],
+    "kept": false,
+    "ports": [
+      58459,
+      48267
+    ],
+    "int_port_avoided": true
+  },
+  "status": "complete",
+  "error": null
+}
