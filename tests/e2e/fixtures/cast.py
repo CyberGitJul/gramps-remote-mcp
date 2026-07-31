@@ -301,6 +301,106 @@ PEOPLE = [
         "gender": 0,
         "birth_year": 1944,
     },
+    {
+        "gramps_id": "I0042",
+        "first_name": "Doppelter",
+        "surname": "Testeintrag",
+        "gender": 1,
+        "birth_year": None,
+    },
+    {
+        "gramps_id": "I0043",
+        "first_name": "Wilhelma",
+        "surname": "Rosentreu",
+        "gender": 1,
+        "birth_year": 1895,
+    },
+    {
+        "gramps_id": "I0044",
+        "first_name": "Detlef",
+        "surname": "Wiesenkamp",
+        "gender": 1,
+        "birth_year": 1905,
+    },
+    {
+        "gramps_id": "I0045",
+        "first_name": "Rosalind",
+        "surname": "Steinbrecht",
+        "gender": 0,
+        "birth_year": 1885,
+        "name_type": "Married Name",
+        "alternate_names": [{"surname": "Wendelmark", "name_type": "Birth Name"}],
+    },
+    {
+        "gramps_id": "I0046",
+        "first_name": "Ingeborg",
+        "surname": "Talvegaard",
+        "gender": 0,
+        "birth_year": 1890,
+    },
+    {
+        "gramps_id": "I0047",
+        "first_name": "Marit",
+        "surname": "Talvegaard",
+        "gender": 0,
+        "birth_year": 1918,
+    },
+    {
+        "gramps_id": "I0048",
+        "first_name": "Torvald",
+        "surname": "Talvegaard",
+        "gender": 1,
+        "birth_year": 1888,
+    },
+    {
+        "gramps_id": "I0049",
+        "first_name": "Ragnar",
+        "surname": "Steinfeld",
+        "gender": 1,
+        "birth_year": 1918,
+    },
+    {
+        "gramps_id": "I0050",
+        "first_name": "Hedda",
+        "surname": "Marbach",
+        "gender": 0,
+        "birth_year": 1920,
+    },
+    {
+        "gramps_id": "I0051",
+        "first_name": "Detlev",
+        "surname": "Nordhagen",
+        "gender": 2,
+        "birth_year": 1868,
+    },
+    {
+        "gramps_id": "I0052",
+        "first_name": "Cordula",
+        "surname": "Nordhagen",
+        "gender": 2,
+        "birth_year": 1870,
+    },
+    {
+        "gramps_id": "I0053",
+        "first_name": "Elvide",
+        "surname": "Nordhagen",
+        "gender": 2,
+        "birth_year": 1872,
+    },
+    {
+        "gramps_id": "I0054",
+        "first_name": "Eberhard",
+        "surname": "Nordhagen",
+        "gender": 2,
+        "birth_year": 1874,
+    },
+    {
+        "gramps_id": "I0055",
+        "first_name": "Frauke",
+        "surname": "Nordhagen",
+        "gender": 2,
+        "birth_year": 1876,
+    },
 ]
 
 FAMILIES = [
@@ -340,30 +440,125 @@ FAMILIES = [
     {"gramps_id": "F0018", "spouse_a": "I0028", "spouse_b": "I0039", "children": []},
     {"gramps_id": "F0019", "spouse_a": "I0030", "spouse_b": "I0040", "children": []},
     {"gramps_id": "F0020", "spouse_a": "I0032", "spouse_b": "I0041", "children": []},
+    {"gramps_id": "F0021", "spouse_a": "I0046", "spouse_b": None, "children": ["I0047"]},
 ]
 
 SOURCES = [
-    {"gramps_id": "S0000", "title": "Chronicle entry 00"},
-    {"gramps_id": "S0001", "title": "Chronicle entry 01"},
-    {"gramps_id": "S0002", "title": "Chronicle entry 02"},
-    {"gramps_id": "S0003", "title": "Chronicle entry 03"},
-    {"gramps_id": "S0004", "title": "Chronicle entry 04"},
-    {"gramps_id": "S0005", "title": "Chronicle entry 05"},
-    {"gramps_id": "S0006", "title": "Chronicle entry 06"},
-    {"gramps_id": "S0007", "title": "Chronicle entry 07"},
-    {"gramps_id": "S0008", "title": "Chronicle entry 08"},
-    {"gramps_id": "S0009", "title": "Chronicle entry 09"},
-    {"gramps_id": "S0010", "title": "Chronicle entry 10"},
-    {"gramps_id": "S0011", "title": "Chronicle entry 11"},
-    {"gramps_id": "S0012", "title": "Chronicle entry 12"},
-    {"gramps_id": "S0013", "title": "Chronicle entry 13"},
-    {"gramps_id": "S0014", "title": "Chronicle entry 14"},
-    {"gramps_id": "S0015", "title": "Chronicle entry 15"},
-    {"gramps_id": "S0016", "title": "Chronicle entry 16"},
-    {"gramps_id": "S0017", "title": "Chronicle entry 17"},
-    {"gramps_id": "S0018", "title": "Chronicle entry 18"},
-    {"gramps_id": "S0019", "title": "Chronicle entry 19"},
-    {"gramps_id": "S0020", "title": "Chronicle entry 20"},
+    {
+        "gramps_id": "S0000",
+        "title": "Chronicle entry 00",
+        "body": "Invented note 00 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0001",
+        "title": "Chronicle entry 01",
+        "body": "Invented note 01 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0002",
+        "title": "Chronicle entry 02",
+        "body": "Invented note 02 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0003",
+        "title": "Chronicle entry 03",
+        "body": "Invented note 03 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0004",
+        "title": "Chronicle entry 04",
+        "body": "Invented note 04 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0005",
+        "title": "Chronicle entry 05",
+        "body": "Invented note 05 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0006",
+        "title": "Chronicle entry 06",
+        "body": "Invented note 06 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0007",
+        "title": "Chronicle entry 07",
+        "body": "Invented note 07 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0008",
+        "title": "Chronicle entry 08",
+        "body": "Invented note 08 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0009",
+        "title": "Chronicle entry 09",
+        "body": "Invented note 09 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0010",
+        "title": "Chronicle entry 10",
+        "body": "Invented note 10 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0011",
+        "title": "Chronicle entry 11",
+        "body": "Invented note 11 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0012",
+        "title": "Chronicle entry 12",
+        "body": "Invented note 12 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0013",
+        "title": "Chronicle entry 13",
+        "body": "Invented note 13 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0014",
+        "title": "Chronicle entry 14",
+        "body": "Invented note 14 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0015",
+        "title": "Chronicle entry 15",
+        "body": "Invented note 15 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0016",
+        "title": "Chronicle entry 16",
+        "body": "Invented note 16 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0017",
+        "title": "Chronicle entry 17",
+        "body": "Invented note 17 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0018",
+        "title": "Chronicle entry 18",
+        "body": "Invented note 18 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0019",
+        "title": "Chronicle entry 19",
+        "body": "Invented note 19 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0020",
+        "title": "Chronicle entry 20",
+        "body": "Invented note 20 for the E2E fixture.",
+    },
+    {
+        "gramps_id": "S0021",
+        "title": "The Aschenblum farm at Nienstedt",
+        "body": "The farm at Nienstedt came into the family through Anselm Aschenblum, who took it over from a distant cousin and worked it for the rest of his life. The buildings stood on the slope above the mill road: a long house under a thatched roof, a stable that had been extended twice, and the big barn at the eastern end of the yard. The barn burned down in 1912, and the family rebuilt it in brick over the two summers that followed. Brunhild, who grew up there, would not keep a lamp in an outbuilding for the rest of her life. The farm stayed in the family until the fields were sold off, field by field, to the neighbours on the other side of the mill road.",
+    },
+    {
+        "gramps_id": "S0022",
+        "title": "The 1918 influenza in our family",
+        "body": "Every branch of the family lost somebody to the influenza, and the parish register for that autumn is a wall of the same handwriting. This piece collects what the letters say about those months: who fell ill first, which households were shut up, and how the burials were arranged when the sexton himself was in bed with it.",
+    },
 ]
 
 # Every namespace, as observed on the instance this tree was grown on. The whole dict
@@ -372,13 +567,32 @@ SOURCES = [
 # as one extra note, because Gramps records the repair. Measured, not assumed.
 COUNTS = {
     "citations": 0,
-    "events": 42,
-    "families": 21,
+    "events": 55,
+    "families": 22,
     "media": 0,
-    "notes": 21,
-    "people": 42,
+    "notes": 23,
+    "people": 56,
     "places": 0,
     "repositories": 0,
-    "sources": 21,
+    "sources": 23,
     "tags": 2,
 }
+
+# The uc19 import input, and what importing it into *this* tree actually moves. Measured
+# rather than derived: the file carries the `Unbestätigt` tag its people were created
+# with, and whether Gramps merges that tag by name or keeps a second one is not something
+# a per-namespace delta assertion may guess. `landed` records whether the ids collide or
+# get remapped — the Stage-2 design left that open, so uc19 asserts on names.
+COUSINS = {
+    "filename": "cousins-branch.gramps",
+    "surname": "Vollmarsen",
+    "first_names": ["Jakob", "Sophie", "Lena"],
+    "delta": {"families": 1, "people": 3, "tags": 1},
+    "landed": ["I0056", "I0057", "I0058"],
+}
+
+# How the API hands a name type back, read from the person the fixture writes one on.
+# The client *writes* a bare string (gramps_client.py:269); if the server normalises it
+# to a NameType object on read, every assertion about `Married Name` / `Birth Name` has
+# to go through that shape. This is the answer for the instance the fixture was built on.
+NAME_TYPES = {"gramps_id": "I0045", "primary": "Married Name", "alternate": "Birth Name"}
