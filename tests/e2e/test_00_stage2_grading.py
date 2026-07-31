@@ -15,14 +15,15 @@ and read by nobody; an emptied `guards:` was invisible. It is a graded outcome n
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fixtures import stage2_records as make
 from harness.docker_util import ProbeError
-from stage2 import checks_record, grading
+from stage2 import checks_record, grading, validate
 from stage2.assertion_kinds import KINDS
-from stage2.catalog import Assertion, UseCase, load_all
+from stage2.catalog import Assertion, UseCase, load, load_all
 
 MARRIED, BIRTH = make.MARRIED_NAME, make.BIRTH_NAME
 
@@ -229,6 +230,54 @@ def test_alternates_counts_and_matches_pairs() -> None:
     )
 
     assert graded(assertion, _replacing(swapped), guards={"people": ["target"]}).passed
+
+
+def test_an_alternate_may_be_named_by_surname_alone() -> None:
+    """uc4 omits `name_type` on purpose, and the first live run proved it right: the model's
+    route left the old name as an **"Also Known As"**, a type the use case must not pin — that
+    choice belongs to the product, and asserting it would be asserting the answer."""
+    kept = make.person(
+        "I0000", "Rosalind", "Steinbrecht", alternates=((("Wendelmark"), "Also Known As"),)
+    )
+    assertion = Assertion(
+        "a", "alternates", {"subject": "target", "contains": [{"surname": "Wendelmark"}]}
+    )
+
+    assert graded(assertion, _replacing(kept), guards={"people": ["target"]}).passed
+
+
+def test_a_misspelt_key_inside_contains_is_caught_before_any_money_is_spent(
+    tmp_path: Path,
+) -> None:
+    """The lint is where this belongs. Catching it in the grader means the model run that was
+    being graded has already been paid for."""
+    path = tmp_path / "uc01-probe.yaml"
+    path.write_text(
+        "id: uc1\ntier: 1\nprompt: Please correct her record.\n"
+        "primary: [gramps_add_alternate_name]\n"
+        "subjects:\n  target: {namespace: people, first_name: Rosalind, surname: Steinbrecht}\n"
+        "guards: {people: [target]}\nmaxdrop: 0\n"
+        "assertions:\n  - id: uc1/alt\n    kind: alternates\n    subject: target\n"
+        "    contains: [{sur_name: Wendelmark}]\n",
+        encoding="utf-8",
+    )
+    case = load(path)
+
+    found = validate.problems({case.id: case}, {"gramps_add_alternate_name"}, BEFORE.tree)
+
+    assert any("sur_name" in problem for problem in found), found
+
+
+def test_an_unknown_key_inside_contains_is_a_failure_not_a_crash() -> None:
+    """It used to be a `KeyError` mid-sweep: the harness died with a traceback after the model
+    run had already been paid for."""
+    assertion = Assertion(
+        "a", "alternates", {"subject": "target", "contains": [{"sur_name": "Wendelmark"}]}
+    )
+
+    outcome = graded(assertion, BEFORE)
+
+    assert not outcome.passed and "sur_name" in outcome.detail
 
 
 def test_alternates_catches_the_extra_name_a_wrong_route_leaves_behind() -> None:

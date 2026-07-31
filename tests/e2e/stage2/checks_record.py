@@ -34,6 +34,10 @@ SOURCE_FIELDS = {
 
 UNKNOWN = object()
 
+# What one entry of an `alternates: contains:` list may name. Both are optional — an entry that
+# gives one of them means "an alternate with this, whatever the other is".
+ALTERNATE_KEYS = frozenset({"surname", "name_type"})
+
 
 def read_field(record: Mapping[str, Any], field: str) -> Any:
     """One named leaf, or `UNKNOWN` — which never equals anything a use case can write."""
@@ -67,12 +71,30 @@ def alternates(params: Params, evidence: Any) -> str | None:
         for name in record.get("alternate_names") or []
     ]
     if "count" in params and len(names) != int(params["count"]):
-        return f"people/{gramps_id} has {len(names)} alternate names {names}, expected {params['count']}"
+        return (
+            f"people/{gramps_id} has {len(names)} alternate names {names}, "
+            f"expected {params['count']}"
+        )
     for wanted in params.get("contains") or []:
-        pair = (str(wanted["surname"]), str(wanted["name_type"]))
-        if pair not in names:
-            return f"people/{gramps_id} has {names}, which does not include {pair}"
+        unknown = set(wanted) - ALTERNATE_KEYS
+        if unknown:
+            return f"{sorted(unknown)} is not something an alternate name has"
+        if not any(_matches(wanted, name) for name in names):
+            return f"people/{gramps_id} has {names}, none of which matches {dict(wanted)}"
     return None
+
+
+def _matches(wanted: Mapping[str, Any], name: tuple[str, str]) -> bool:
+    """Only the keys the use case wrote.
+
+    uc4 names a surname and deliberately not a type: which type `add_alternate_name` assigns is
+    the product's choice (the first live run made it `"Also Known As"`), and a use case that
+    pinned it would be asserting the answer instead of asking the question.
+    """
+    surname, kind = name
+    if "surname" in wanted and str(wanted["surname"]) != surname:
+        return False
+    return not ("name_type" in wanted and str(wanted["name_type"]) != kind)
 
 
 def family(params: Params, evidence: Any) -> str | None:

@@ -100,6 +100,17 @@ def test_a_broken_harness_aborts_the_sweep_instead_of_being_averaged_in() -> Non
         driven.verdict(use_case())
 
 
+def test_a_check_that_cannot_be_evaluated_aborts_as_a_harness_fault() -> None:
+    """Measured the expensive way: a `KeyError` inside a check killed a live sweep with a
+    traceback, after the model run it was grading had already been paid for. A wrong grader is
+    not a wrong product, and it may not be reported as one."""
+    driven = build(FakeRunner(runner.OK))
+    broken = use_case(Assertion("uc1/counts", "counts", {}))  # `deltas` missing
+
+    with pytest.raises(sweep.HarnessAborted, match="harness bug"):
+        driven.attempt(broken)
+
+
 def test_an_inconclusive_run_is_recorded_but_not_graded() -> None:
     driven = build(FakeRunner(runner.INCONCLUSIVE, runner.INCONCLUSIVE, runner.OK))
 

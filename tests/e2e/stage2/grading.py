@@ -61,6 +61,10 @@ GUARDS_ID = "guards"
 MAXDROP_ID = "maxdrop"
 
 
+class GradingError(ProbeError):
+    """A check could not be evaluated at all. A harness fault, never a product finding."""
+
+
 @dataclass(frozen=True)
 class BackupEntry:
     """One file that appeared in the mounted backup directory during the call."""
@@ -186,6 +190,14 @@ def _run(assertion: Any, evidence: Evidence) -> Outcome:
         # A subject that cannot be resolved *after* the call is a statement about the call —
         # `new:people` with nothing new is exactly the failure the use case is looking for.
         detail = str(error)
+    except Exception as error:
+        # Anything else is this suite being wrong about its own data, and a wrong grader must
+        # not be reported as a wrong product. Measured the expensive way: a `KeyError` inside a
+        # check killed a live sweep with a traceback, after its model run was already paid for.
+        raise GradingError(
+            f"{assertion.id} ({assertion.kind}) could not be evaluated: {error!r} — that is a "
+            "harness bug, not a finding"
+        ) from error
     return Outcome(assertion.id, assertion.kind, kind.grade, detail is None, detail or "")
 
 

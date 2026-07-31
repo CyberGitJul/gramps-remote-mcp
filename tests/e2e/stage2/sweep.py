@@ -107,7 +107,10 @@ class Sweep:
             calls=[call.name for call in (run.transcript.gramps_calls if run.transcript else ())],
             backup=appeared,
         )
-        outcomes = tuple(grading.grade(use_case, evidence))
+        try:
+            outcomes = tuple(grading.grade(use_case, evidence))
+        except grading.GradingError as error:
+            raise HarnessAborted(f"{use_case.id}: {error}") from error
         self.graded.append(Graded(use_case.id, run, outcomes))
         failed = tuple(outcome.id for outcome in grading.failures(outcomes))
         return Attempt(run.verdict, failed, run.cost_usd)

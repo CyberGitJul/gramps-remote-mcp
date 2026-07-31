@@ -28,6 +28,7 @@ from .assertion_kinds import KINDS, MANY_SUBJECTS, ONE_SUBJECT, missing_paramete
 from .assertion_kinds import A as GRADE_A
 from .assertion_kinds import unknown_parameters as unknown_kind_parameters
 from .catalog import EVERYTHING, UseCase
+from .checks_record import ALTERNATE_KEYS
 from .leak_lint import leaks, stale, unwaived
 from .subjects import NEW, Tree, resolve_all
 
@@ -156,6 +157,7 @@ def _assertions(use_case: UseCase, seen: dict[str, str]) -> list[str]:
         if unknown:
             found.append(f"{use_case.id}: {assertion.id} passes {sorted(unknown)}, unknown here")
         found += _references(use_case, assertion.id, assertion.params, declared)
+        found += _contains(use_case, assertion)
 
     gating = any(a.kind in KINDS and KINDS[a.kind].grade == GRADE_A for a in use_case.assertions)
     if use_case.gates and not gating:
@@ -179,6 +181,29 @@ def _references(use_case: UseCase, where: str, params: dict[str, Any], declared:
         for name in names:
             if not str(name).startswith(NEW) and name not in declared:
                 found.append(f"{use_case.id}: {where} points at undeclared subject {name!r}")
+    return found
+
+
+def _contains(use_case: UseCase, assertion: Any) -> list[str]:
+    """The inner shape of `alternates: contains:`, which nothing used to check.
+
+    It cost a live run to learn that: a misspelt key inside one of those entries loaded, passed
+    every check here, and then died with a `KeyError` in the middle of the sweep — after the
+    model run it was grading had already been paid for.
+    """
+    if assertion.kind != "alternates":
+        return []  # `backup_file`'s `contains:` is a string, not a list of pairs
+    found = []
+    for entry in assertion.params.get("contains") or []:
+        if not isinstance(entry, dict) or not entry:
+            found.append(f"{use_case.id}: {assertion.id} has a `contains` entry naming nothing")
+            continue
+        unknown = sorted(set(entry) - ALTERNATE_KEYS)
+        if unknown:
+            found.append(
+                f"{use_case.id}: {assertion.id} matches an alternate on {unknown}, which an "
+                f"alternate name does not have — it has {sorted(ALTERNATE_KEYS)}"
+            )
     return found
 
 
