@@ -224,12 +224,15 @@ def test_an_id_that_does_not_resolve_is_caught(rest: FakeRest, mcp: FakeMcp) -> 
 
 
 def test_a_delete_reports_one_fewer_and_the_tree_agrees(rest: FakeRest, mcp: FakeMcp) -> None:
+    """`expect_removed` is what makes "one fewer" mean *this* one — see `test_00_movement.py`
+    for the delete that satisfies the count and takes the wrong person."""
     written = assert_guarded_write(
         rest,
         mcp,
         "gramps_delete_person",
         {"gramps_id": "I0002", "confirm": True},
         expect_delta={"people": -1},
+        expect_removed={"people": ["I0002"]},
         self_report="delete",
     )
 
@@ -260,6 +263,7 @@ def test_a_delete_that_miscounts_itself_is_caught(rest: FakeRest, mcp: FakeMcp) 
             "gramps_delete_person",
             {"gramps_id": "I0002", "confirm": True},
             expect_delta={"people": -1},
+            expect_removed={"people": ["I0002"]},
             self_report="delete",
         )
 

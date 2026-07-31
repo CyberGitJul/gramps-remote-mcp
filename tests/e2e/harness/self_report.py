@@ -23,11 +23,16 @@ in `assertions.py`, never instead of it.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal
 
+from .movement import Movement
 from .rest import GrampsRest
 from .wire import ABSENT, resolve_path
+
+# The name of the branch to take. There is no sniffing it from the payload: `counts` and
+# `person` are both `{before, after}` dicts, and guessing wrong means no cross-check at all.
+SelfReport = Literal["counts", "person", "bulk", "delete", "id", "unguarded"]
 
 # Gramps ids are one letter plus digits. Measured: they start at `I0000`, not `I0001` — the
 # original use-case drafts hardcoded the wrong first id.
@@ -44,6 +49,7 @@ def assert_self_report(
     after: dict[str, Any],
     rest: GrampsRest,
     id_namespace: str | None,
+    moved: Movement,
 ) -> None:
     if self_report == "unguarded":
         return
@@ -56,7 +62,8 @@ def assert_self_report(
     elif self_report == "counts":
         _assert_counts(name, reported, before, after)
     elif self_report == "id":
-        assert_new_id_resolves(name, reported, rest, str(id_namespace))
+        namespace = str(id_namespace)
+        assert_new_id_resolves(name, reported, rest, namespace, moved.added.get(namespace, []))
 
 
 def _assert_person(
@@ -143,8 +150,15 @@ def assert_story_matches(
         )
 
 
-def assert_new_id_resolves(name: str, reported: Any, rest: GrampsRest, namespace: str) -> None:
-    """A well-shaped id is not evidence, and neither is a correct count delta."""
+def assert_new_id_resolves(
+    name: str, reported: Any, rest: GrampsRest, namespace: str, appeared: Sequence[str]
+) -> None:
+    """A well-shaped id is not evidence, and neither is a correct count delta.
+
+    Nor is resolving: an id that was already in the tree resolves perfectly well, and a create
+    that hands one back leaves the count exactly where the test expected it. The evidence is
+    that *this call* is what put the id there, which only the identity difference knows.
+    """
     assert isinstance(reported, str), f"{name}: expected a bare id, got {type(reported).__name__}"
     gramps_id = reported.strip()
     assert ID_PATTERN.fullmatch(gramps_id), f"{name}: {gramps_id!r} is not a gramps id"
@@ -155,3 +169,8 @@ def assert_new_id_resolves(name: str, reported: Any, rest: GrampsRest, namespace
             f"{name}: handed back {gramps_id}, but no {namespace} record carries that id — "
             "every later step of the use case would key off an id that does not exist"
         ) from exc
+    assert gramps_id in appeared, (
+        f"{name}: handed back {gramps_id}, but what appeared in {namespace} during this call was "
+        f"{list(appeared) or 'nothing'} — an id that was already in the tree resolves just as "
+        "well, and is not evidence that this call created anything"
+    )

@@ -21,6 +21,13 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `harness/runid.py` | run identity, Docker labels, artifact dirs |
 | `harness/reaper.py` | reaps leftovers without killing a live run (D18) |
 | `harness/token_audit.py` | counts token POSTs per client IP from the access log (D15) |
+| `harness/assertions.py` | the two assertions a test may make: a guarded write, a refusal (D16) |
+| `harness/gate.py` | every refusal raised *before* the call goes out — usage errors, not failures |
+| `harness/movement.py` | what moved between two snapshots: counts *and* which objects (B1) |
+| `harness/self_report.py` | the tool's own story, one branch per return shape — never on its own |
+| `harness/wire.py` | the three measured return shapes, and one field path inside them |
+| `harness/backup_dir.py` | the mounted backup dir, reset to a committed manifest (D17) |
+| `harness/vocabulary.py` | which error fragments a refusal may assert on (repo-authored only) |
 | `probes/probe_bringup.py` | the one bring-up probe (D10) |
 | `probes/observed.json` | its committed answers — **the** platform reference |
 | `stubs/fake_mcp_server.py` | a rude stdio server, so the framing is testable without Docker |
@@ -150,6 +157,14 @@ changed shape is a real finding, not noise.
   ```
 
 * `McpSession` keeps the container's stderr; a `ProbeError` from a tool call quotes its tail.
+* A `ProbeError` out of `assert_guarded_write` is **your test**, not the server: the expectation
+  did not cover its own claim, and the gate refuses rather than passing vacuously. The message
+  names which rule and why. Most often it is `expect_removed=` — every namespace that loses
+  objects has to say *which* ones, because a count that moved by -1 is satisfied just as well by
+  the wrong object leaving (`EVERYTHING` covers a wipe).
+* `people changed identity by +1/-1` means the counts were right and the objects behind them were
+  not. That is a create-and-destroy pair netting to zero, which no count can see; declare it with
+  `expect_added=`/`expect_removed=` if the tool is supposed to do it.
 * A `429` from `/api/token/` in *harness* code means the harness spent the window — the
   limiter is per-IP with a ~1 s TTL. `GrampsRest` enforces a 1.1 s minimum login gap (D22)
   precisely so this never competes with the code under test.
