@@ -50,6 +50,28 @@ NAME_TYPE_NOTE = (
 )
 
 
+FAMILIES_NOTE = (
+    "# `spouse_a`/`spouse_b` are the *arguments* gramps_add_family was called with;\n"
+    "# `father`/`mother` are the slots the server actually put them in, read back off the\n"
+    "# built tree. They are not the same thing and for six of these families they disagree:\n"
+    "# `_assign_parent_handles` moves a person to the mother slot only for gender Female, so\n"
+    "# two female spouses fall through to call order and `spouse_a` becomes the father. Read\n"
+    "# the slot, never deduce it — deducing it means re-deriving the product's rule inside a\n"
+    "# test and calling the result independent evidence.\n"
+)
+
+GRAPH_NOTE = (
+    "# The four-generation lineage the family-graph matrix runs on, and three things about it\n"
+    "# that are the server's decision rather than the fixture's. `family_order` and\n"
+    "# `parent_family_order` decide what get_descendants and get_ancestors return, in that\n"
+    "# order, so they are measured. `reverse_refs` answers the design's U-2: every read tool\n"
+    "# consults the person-side family_list, every write tool PUTs only the family object, and\n"
+    "# if the API did not maintain the link between them the whole group would be broken in a\n"
+    "# way no mocked test could see. `childref_rel` is U-4, the shape a ChildRefType reads\n"
+    "# back as. The build refuses to write this file if reverse_refs is not 'api'.\n"
+)
+
+
 def render_cast(
     people: list[dict[str, Any]],
     families: list[dict[str, Any]],
@@ -57,11 +79,13 @@ def render_cast(
     counts: dict[str, int],
     cousins: dict[str, Any],
     name_types: dict[str, Any],
+    graph: dict[str, Any],
 ) -> str:
     """Emit `cast.py`: every id lives here so no test body has to carry a literal."""
     return (
         CAST_HEADER
         + f"PEOPLE = {people!r}\n\n"
+        + FAMILIES_NOTE
         + f"FAMILIES = {families!r}\n\n"
         + f"SOURCES = {sources!r}\n\n"
         + COUNTS_NOTE
@@ -69,7 +93,9 @@ def render_cast(
         + COUSINS_NOTE
         + f"COUSINS = {cousins!r}\n\n"
         + NAME_TYPE_NOTE
-        + f"NAME_TYPES = {name_types!r}\n"
+        + f"NAME_TYPES = {name_types!r}\n\n"
+        + GRAPH_NOTE
+        + f"GRAPH = {graph!r}\n"
     )
 
 

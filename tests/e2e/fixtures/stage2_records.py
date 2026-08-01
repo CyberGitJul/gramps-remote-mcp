@@ -12,7 +12,6 @@ would be a grader that agrees with itself.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 from stage2.state import NAMESPACES, State
@@ -103,7 +102,6 @@ def from_cast(cast: Any) -> State:
     carries which tag, so the tag distribution below follows the fixture's own rule
     (`add_person` creates `Unbestätigt` on first use) rather than a measurement.
     """
-    gender = {entry["gramps_id"]: entry.get("gender", FEMALE) for entry in cast.PEOPLE}
     households: dict[str, list[str]] = {}
     for entry in cast.FAMILIES:
         for member in (entry["spouse_a"], entry["spouse_b"], *entry["children"]):
@@ -130,8 +128,8 @@ def from_cast(cast: Any) -> State:
         families=tuple(
             family(
                 entry["gramps_id"],
-                father=_slot(entry, gender, MALE),
-                mother=_slot(entry, gender, FEMALE),
+                father=str(entry["father"]),
+                mother=str(entry["mother"]),
                 children=tuple(entry["children"]),
             )
             for entry in cast.FAMILIES
@@ -147,15 +145,16 @@ def from_cast(cast: Any) -> State:
     )
 
 
-def _slot(entry: Mapping[str, Any], gender: Mapping[str, int], wanted: int) -> str:
-    """Which spouse sits in which parent slot.
-
-    `cast.py` says `spouse_a`/`spouse_b` and deliberately not father/mother — which slot a
-    person lands in is the product's own rule (female becomes the mother) and several use
-    cases exist to test it. Applying that rule here is what puts a `family` assertion through
-    the same branch it will meet live.
-    """
-    for spouse in (entry["spouse_a"], entry["spouse_b"]):
-        if spouse and gender.get(str(spouse)) == wanted:
-            return str(spouse)
-    return ""
+# The slot each spouse landed in used to be derived here, as "the first spouse whose gender is
+# male takes the father slot". That is the intuitive rule and it is not the product's: for two
+# spouses of the same sex `_assign_parent_handles` falls through to call order, so `spouse_a`
+# becomes the father and no gender is involved. Measured against the committed tree, the two
+# disagreed on **six of twenty-two** families — F0003, F0005, F0006, F0008, F0009 and F0011 —
+# so every `family` assertion touching one of them was being graded against a tree the product
+# never produces. No committed use case named those six, which is the only reason it had not
+# reported anything yet.
+#
+# The slots are now measured by `build_fixture.measure_graph` and written into `cast.FAMILIES`.
+# Deriving them here would have been re-implementing the code under test inside the fixture that
+# grades it, and it would rot silently the day the product's rule changed — which is exactly the
+# change such a test exists to catch.

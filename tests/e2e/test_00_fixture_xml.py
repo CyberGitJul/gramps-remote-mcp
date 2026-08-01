@@ -125,17 +125,36 @@ def test_the_collision_check_catches_the_collisions_it_is_for() -> None:
 
 
 def test_every_family_holds_the_people_the_cast_says(fixture: Fixture) -> None:
-    """Membership as a **set**: which spouse landed in which slot is the server's decision, and
-    a test that predicted it would be re-deriving `_assign_parent_handles` from the product."""
+    """Per slot, since T4.5 measured them. `cast.FAMILIES` now records `father`/`mother` as the
+    server assigned them, next to the `spouse_a`/`spouse_b` it was *called* with, so this can
+    compare the file against a measurement instead of against a rule re-derived from the code
+    under test. It is the guard that makes the family-graph group's premise — that a parent slot
+    is bloodline and not gender — something a mutation can break."""
     declared = {entry["gramps_id"]: entry for entry in cast.FAMILIES}
 
     for family in fixture.families:
         entry = declared[family.get("id")]
         father, mother = fixture.slots(family)
-        expected = {str(spouse) for spouse in (entry["spouse_a"], entry["spouse_b"]) if spouse}
 
-        assert {slot for slot in (father, mother) if slot} == expected, family.get("id")
+        assert (father or "") == entry["father"], family.get("id")
+        assert (mother or "") == entry["mother"], family.get("id")
         assert fixture.children(family) == set(entry["children"]), family.get("id")
+
+
+def test_the_slots_are_not_merely_the_call_order(fixture: Fixture) -> None:
+    """Otherwise the check above would be satisfied by a cast that copied `spouse_a` into
+    `father`, which is exactly the mistake it exists to prevent. Six of these families have a
+    female in the father slot; at least one must disagree with a gender-based reading."""
+    surprising = [
+        entry
+        for entry in cast.FAMILIES
+        if entry["father"] and entry["mother"] and entry["father"] != entry["spouse_a"]
+    ]
+    genders = {person["gramps_id"]: person["gender"] for person in cast.PEOPLE}
+    female_fathers = [entry for entry in cast.FAMILIES if genders.get(entry["father"]) == 0]
+
+    assert female_fathers, "no family has a female in the father slot — the shape is gone"
+    assert surprising or female_fathers
 
 
 def test_every_declared_family_is_in_the_xml(fixture: Fixture) -> None:
