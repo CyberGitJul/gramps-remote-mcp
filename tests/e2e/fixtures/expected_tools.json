@@ -1,0 +1,922 @@
+{
+  "regenerate_with": "cd tests/e2e && python -m harness.tool_contract",
+  "gate_off": [
+    "gramps_add_alternate_name",
+    "gramps_add_birth_name",
+    "gramps_add_child_to_family",
+    "gramps_add_family",
+    "gramps_add_person",
+    "gramps_confirm_person",
+    "gramps_create_blog_post",
+    "gramps_export_tree",
+    "gramps_get_ancestors",
+    "gramps_get_blog_post",
+    "gramps_get_descendants",
+    "gramps_get_object_counts",
+    "gramps_get_person",
+    "gramps_get_relations",
+    "gramps_import_file",
+    "gramps_list_blog_posts",
+    "gramps_list_people",
+    "gramps_remove_child_from_family",
+    "gramps_search_person",
+    "gramps_set_family_parent",
+    "gramps_set_first_name",
+    "gramps_set_gender",
+    "gramps_set_gender_bulk",
+    "gramps_set_surname",
+    "gramps_set_surname_bulk",
+    "gramps_swap_primary_name",
+    "gramps_update_blog_post"
+  ],
+  "tools": {
+    "gramps_add_alternate_name": {
+      "description": "Add an alternate name of a given type (e.g. 'Birth Name', 'Married Name').\n\nSurname content is taken from the argument; other subfields default. Use\nit to record a maiden or married name alongside the primary name.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          },
+          "surname": {
+            "title": "Surname",
+            "type": "string"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "First Name"
+          },
+          "name_type": {
+            "default": "Birth Name",
+            "title": "Name Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gramps_id",
+          "surname"
+        ],
+        "title": "gramps_add_alternate_nameArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_add_birth_name": {
+      "description": "Add a 'Birth Name' alternate name entry with the given surname.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          },
+          "surname": {
+            "title": "Surname",
+            "type": "string"
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "First Name"
+          }
+        },
+        "required": [
+          "gramps_id",
+          "surname"
+        ],
+        "title": "gramps_add_birth_nameArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_add_child_to_family": {
+      "description": "Link an existing person as a child of an existing family.",
+      "inputSchema": {
+        "properties": {
+          "family_id": {
+            "title": "Family Id",
+            "type": "string"
+          },
+          "child_id": {
+            "title": "Child Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family_id",
+          "child_id"
+        ],
+        "title": "gramps_add_child_to_familyArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_add_family": {
+      "description": "Create a new Family linking one or two spouses. Returns the new family's Gramps ID.\n\nParent-slot assignment: whichever spouse has gender Female (0) becomes the\nmother, the other the father. With a single spouse, they are the father\nunless female. If gender does not disambiguate (same gender, or neither is\nfemale), call order wins: spouse_a -> father, spouse_b -> mother.",
+      "inputSchema": {
+        "properties": {
+          "spouse_a_id": {
+            "title": "Spouse A Id",
+            "type": "string"
+          },
+          "spouse_b_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Spouse B Id"
+          }
+        },
+        "required": [
+          "spouse_a_id"
+        ],
+        "title": "gramps_add_familyArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "gramps_add_familyOutput",
+        "type": "object"
+      }
+    },
+    "gramps_add_person": {
+      "description": "Create a new person, tagged 'Unbest\u00e4tigt' (unconfirmed). Returns the new Gramps ID.\n\ngender: 0=Female, 1=Male, 2=Unknown, 3=Other.\nbirth_quality: one of 'exact', 'about', 'before', 'after', 'estimated',\n'between' (the last requires birth_year_to). Omit birth_year for no birth event.",
+      "inputSchema": {
+        "properties": {
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          },
+          "surname": {
+            "title": "Surname",
+            "type": "string"
+          },
+          "gender": {
+            "title": "Gender",
+            "type": "integer"
+          },
+          "birth_year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Birth Year"
+          },
+          "birth_quality": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Birth Quality"
+          },
+          "birth_year_to": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Birth Year To"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Note"
+          }
+        },
+        "required": [
+          "first_name",
+          "surname",
+          "gender"
+        ],
+        "title": "gramps_add_personArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "gramps_add_personOutput",
+        "type": "object"
+      }
+    },
+    "gramps_confirm_person": {
+      "description": "Remove the 'Unbest\u00e4tigt' tag from a person, marking them as confirmed.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gramps_id"
+        ],
+        "title": "gramps_confirm_personArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_create_blog_post": {
+      "description": "Create a blog post (a Source tagged 'Blog' + a body note). Returns its Gramps ID.\n\n`body` is stored per the server's GRAMPS_BLOG_BODY_FORMAT: plain text\n(default) or HTML. Returns the new source gramps_id (e.g. 'S0002').",
+      "inputSchema": {
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Author"
+          }
+        },
+        "required": [
+          "title",
+          "body"
+        ],
+        "title": "gramps_create_blog_postArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "title": "Result",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "gramps_create_blog_postOutput",
+        "type": "object"
+      }
+    },
+    "gramps_delete_all_objects": {
+      "description": "Delete EVERY object in the tree \u2014 people, families, events, places,\nsources, citations, repositories, media, notes and tags. DESTRUCTIVE AND\nIRREVERSIBLE: there is no undo and no partial mode.\n\nRequires confirm=True AND expected_count set to the tree's current total\nobject count \u2014 call gramps_get_object_counts first and sum its values. If\nexpected_count does not match the live total, nothing is deleted. Take a\nbackup with gramps_export_tree before calling this; that file is the only\nway back. Returns {before, after, deleted}. Only present when the server\nwas started with GRAMPS_ENABLE_DESTRUCTIVE=1; the account must have OWNER\nrole.\n\nThis call can run for several minutes \u2014 up to roughly 300s for the delete\nrequest itself (doubled if a session relogin retry fires), plus up to\nanother 300s confirming the tree is empty. If your MCP client gives up\nbefore this returns, or a gateway error interrupts the connection, that is\nnot proof the wipe failed or succeeded: call gramps_get_object_counts\nafterwards to find out what actually happened \u2014 the counts, not this\nresponse, are the authority on the tree's state.",
+      "inputSchema": {
+        "properties": {
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          },
+          "expected_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expected Count"
+          }
+        },
+        "title": "gramps_delete_all_objectsArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_delete_blog_post": {
+      "description": "Delete a blog post. DESTRUCTIVE \u2014 requires confirm=True.\n\nRemoves the Source and cleans up its body note if now orphaned\n(shared notes are kept); guards that the source count drops by one.\nOnly present when the server was started with\nGRAMPS_ENABLE_DESTRUCTIVE=1.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "gramps_id"
+        ],
+        "title": "gramps_delete_blog_postArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_delete_family": {
+      "description": "Delete a family. DESTRUCTIVE \u2014 requires confirm=True.\n\nFor cleaning up an orphaned/childless family left behind after\nre-homing its children (e.g. remove_child_from_family emptied a\npartnerless family). Refuses if the family still has children, and\nguards that the family count drops by exactly one. Only present when\nthe server was started with GRAMPS_ENABLE_DESTRUCTIVE=1.",
+      "inputSchema": {
+        "properties": {
+          "family_id": {
+            "title": "Family Id",
+            "type": "string"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "family_id"
+        ],
+        "title": "gramps_delete_familyArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_delete_person": {
+      "description": "Delete a person. DESTRUCTIVE \u2014 requires confirm=True.\n\nFor removing duplicates or erroneous entries. Guards the tree size:\nthe people count must drop by exactly one, else it errors (surfacing\ne.g. an unexpected cascade). Also cleans up notes that were attached\nonly to this person and are now orphaned (shared notes are kept);\ndeleted note handles are returned as `deleted_notes`. This tool is only\npresent when the server was started with GRAMPS_ENABLE_DESTRUCTIVE=1.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          },
+          "confirm": {
+            "default": false,
+            "title": "Confirm",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "gramps_id"
+        ],
+        "title": "gramps_delete_personArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_export_tree": {
+      "description": "Export the whole tree as a backup file in the server's backup directory.\n\nWrites a .gramps (gzip XML) backup and returns {path, bytes, counts}. `path`\nis the container path, which maps to the mounted host directory. Requires\nGRAMPS_BACKUP_DIR to be configured.",
+      "inputSchema": {
+        "properties": {
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filename"
+          },
+          "extension": {
+            "default": "gramps",
+            "title": "Extension",
+            "type": "string"
+          }
+        },
+        "title": "gramps_export_treeArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_get_ancestors": {
+      "description": "Return the person and their ancestors as a nested tree.\n\nAscends `grade` generations (grade=1 = only parents, 2 = + grandparents).\nThe queried person is the root node; each node carries a `parents` list.\nNote: father/mother are bloodline slots, not gender; each node reports its\nown `gender` separately, so do not infer sex from a parent's slot.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          },
+          "grade": {
+            "default": 1,
+            "title": "Grade",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "gramps_id"
+        ],
+        "title": "gramps_get_ancestorsArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_get_blog_post": {
+      "description": "Fetch one blog post by its Source Gramps ID (e.g. 'S0002').\n\nReturns title, author, change (unix ts), the body as rendered HTML\n(body_html) and raw string (body_text), and note_gramps_id.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gramps_id"
+        ],
+        "title": "gramps_get_blog_postArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_get_descendants": {
+      "description": "Return the person and their descendants as a nested tree.\n\nDescends `grade` generations (grade=1 = only children, 2 = + grandchildren).\nThe queried person is the root node; each node carries a `children` list.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          },
+          "grade": {
+            "default": 1,
+            "title": "Grade",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "gramps_id"
+        ],
+        "title": "gramps_get_descendantsArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_get_object_counts": {
+      "description": "Return the tree's object counts (people, families, events, notes, media, ...).\n\nRead-only overview, handy as a before/after guard around bulk operations.",
+      "inputSchema": {
+        "properties": {},
+        "title": "gramps_get_object_countsArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_get_person": {
+      "description": "Fetch the current live record for a person by Gramps ID (e.g. 'I0024').",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gramps_id"
+        ],
+        "title": "gramps_get_personArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_get_relations": {
+      "description": "Return a person's family context: parent families and own families.\n\n`parent_families`: families where the person is a child (father/mother\nslot + family_gramps_id). `families`: families where the person is a\nspouse/parent (partner + children). father/mother/partner are bloodline\nslots, NOT gender \u2014 every person carries its own `gender`, so never infer\nsex from which slot someone occupies.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gramps_id"
+        ],
+        "title": "gramps_get_relationsArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_import_file": {
+      "description": "Import a file from the server's backup directory into the tree (additive).\n\nReads `filename` from GRAMPS_BACKUP_DIR and imports it, confirming completion\nvia object_counts. Returns {before, after, added}. An import that adds nothing \u2014\nan empty file, or content the object counts do not track \u2014 is reported as a\nsuccess with added=0 once the counts have held steady, not as a timeout. The\naccount must have OWNER role. Requires GRAMPS_BACKUP_DIR to be configured.",
+      "inputSchema": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "extension": {
+            "default": "gramps",
+            "title": "Extension",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "title": "gramps_import_fileArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_list_blog_posts": {
+      "description": "List blog posts (Sources tagged 'Blog'), newest first.\n\nReturns [{gramps_id, title, author, change}]. page is 1-based; pagesize\ncaps rows. Omit both to return all posts.",
+      "inputSchema": {
+        "properties": {
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Page"
+          },
+          "pagesize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pagesize"
+          }
+        },
+        "title": "gramps_list_blog_postsArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_list_people": {
+      "description": "List people, optionally selecting fields and paginating.\n\nkeys: field names to return (e.g. ['gramps_id','gender','family_list',\n'parent_family_list']); omit for full records. page is 1-based; pagesize\ncaps rows per page (server default 20, no maximum). Omit both page and\npagesize to return every person in one call.",
+      "inputSchema": {
+        "properties": {
+          "keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Keys"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Page"
+          },
+          "pagesize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pagesize"
+          }
+        },
+        "title": "gramps_list_peopleArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_remove_child_from_family": {
+      "description": "Remove a person from a family's children (inverse of add_child_to_family).\n\nUse it to detach a child that was wrongly linked (e.g. a spouse mistakenly\nrecorded as a child) so they can be re-homed elsewhere. Refuses if the\nperson is not actually a child of that family; siblings are left intact.",
+      "inputSchema": {
+        "properties": {
+          "family_id": {
+            "title": "Family Id",
+            "type": "string"
+          },
+          "child_id": {
+            "title": "Child Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family_id",
+          "child_id"
+        ],
+        "title": "gramps_remove_child_from_familyArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_search_person": {
+      "description": "Search people by name (case-insensitive substring match).\n\nMatches on first name, surname, the combined 'First Surname', the\nnickname, and any alternate/maiden names. `limit` optionally caps the\nnumber of results returned.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Limit"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "gramps_search_personArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_set_family_parent": {
+      "description": "Set the father or mother of an EXISTING family to a person.\n\nrole: 'father' or 'mother' \u2014 an explicit bloodline slot, NOT gender. A\nperson of any sex may occupy either slot, so this never reorders by sex\n(unlike gramps_add_family). Use it to add a missing parent to a family or\nreplace the wrong one; add_family only creates new families. Overwrites an\nalready-filled slot and returns the displaced parent as `previous` (a\nperson summary, or None); refuses to set the same person as both parents.",
+      "inputSchema": {
+        "properties": {
+          "family_id": {
+            "title": "Family Id",
+            "type": "string"
+          },
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family_id",
+          "gramps_id",
+          "role"
+        ],
+        "title": "gramps_set_family_parentArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_set_first_name": {
+      "description": "Set a person's primary given (first) name. Non-destructive; returns before/after.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          },
+          "first_name": {
+            "title": "First Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gramps_id",
+          "first_name"
+        ],
+        "title": "gramps_set_first_nameArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_set_gender": {
+      "description": "Set a person's gender. 0=Female, 1=Male, 2=Unknown, 3=Other.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          },
+          "gender": {
+            "title": "Gender",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "gramps_id",
+          "gender"
+        ],
+        "title": "gramps_set_genderArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_set_gender_bulk": {
+      "description": "Set gender for many people in one call, under a single count-guard.\n\nitems: [{\"gramps_id\": \"I0031\", \"gender\": 0}, ...]\ngender: 0=Female, 1=Male, 2=Unknown, 3=Other.\nBest-effort (not atomic): a failing item is recorded in `errors` and does\nNOT abort the rest. Returns count_before/count_after/count_guard_ok, a\n`results` list (per-person before/after), and an `errors` list.",
+      "inputSchema": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "gramps_set_gender_bulkArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_set_surname": {
+      "description": "Set a person's primary surname, optionally also the name type (e.g. 'Married Name').",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          },
+          "surname": {
+            "title": "Surname",
+            "type": "string"
+          },
+          "name_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name Type"
+          }
+        },
+        "required": [
+          "gramps_id",
+          "surname"
+        ],
+        "title": "gramps_set_surnameArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_set_surname_bulk": {
+      "description": "Set the primary surname for many people in one call, under a single count-guard.\n\nitems: [{\"gramps_id\": \"I0036\", \"surname\": \"Prentl\", \"name_type\": \"Married Name\"}, ...]\n`name_type` is optional per item. Best-effort (not atomic): a failing item\nis recorded in `errors` and does NOT abort the rest. Returns\ncount_before/count_after/count_guard_ok, `results`, and `errors`.",
+      "inputSchema": {
+        "properties": {
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "gramps_set_surname_bulkArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_swap_primary_name": {
+      "description": "Swap a person's primary name with one of their alternate names.\n\nalt_index selects which alternate (default the first). Use it to promote\ne.g. a Birth Name to primary and demote the Married Name to an alternate.\nErrors if there is no alternate name at that index.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          },
+          "alt_index": {
+            "default": 0,
+            "title": "Alt Index",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "gramps_id"
+        ],
+        "title": "gramps_swap_primary_nameArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    },
+    "gramps_update_blog_post": {
+      "description": "Update a blog post's title, body, and/or author (only what you pass).\n\nbody is stored per the server's GRAMPS_BLOG_BODY_FORMAT and replaces the\nexisting note's text (keeping its type). Returns {gramps_id, updated}.",
+      "inputSchema": {
+        "properties": {
+          "gramps_id": {
+            "title": "Gramps Id",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Body"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Author"
+          }
+        },
+        "required": [
+          "gramps_id"
+        ],
+        "title": "gramps_update_blog_postArguments",
+        "type": "object"
+      },
+      "outputSchema": null
+    }
+  }
+}
