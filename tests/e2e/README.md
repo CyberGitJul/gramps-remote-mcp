@@ -65,6 +65,9 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `test_81_image_contract.py` | T3.3: the in-image import (D19) and the `mcp<2` pin, where it is installed |
 | `test_00_ci_legs.py` | T3.4: every module declares whether it needs an instance, both directions linted |
 | `test_00_refusal_marker.py` | T4.0: `@pytest.mark.refusal` proves a refusal, and is used consistently once used |
+| `test_00_content_digest.py` | T4.0: the content digest sees the field writes the identity one is built not to |
+| `test_00_chain.py` | T4.0: which failure breaks an ordered chain, and what the skip line says |
+| `test_10_seeded_tree.py` | T4.0 acceptance: a class dirties the tree, the next one gets it back — and the seeder had to work for it |
 
 Phase 0 created the probe and the harness skeleton; T1.1 added the gate, T1.2 the reaper, T1.3
 the restartable instance, T1.4 the oracle plus the token audit, T1.5 the container and T1.6 the

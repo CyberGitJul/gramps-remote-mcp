@@ -20,6 +20,11 @@ Two directions, both of them failures:
 `test_00_*` is exempt by the convention the rest of the suite already rests on — those modules
 are Docker-free, and one of them refers to `GrampsInstance` precisely because it patches the
 bring-up away.
+
+The list of spellings below is the part that rots. It grew once already: T4.0 added a second way
+to acquire an instance — asking for `seeded_tree` — and the check went red on the first module
+that used it, correctly, for the wrong stated reason. Anything that hands a module a live
+instance belongs in that tuple on the same commit it is written.
 """
 
 from __future__ import annotations
@@ -31,7 +36,15 @@ import pytest
 
 E2E_ROOT = Path(__file__).parent
 MARKER = re.compile(r"^pytestmark = pytest\.mark\.gramps$", re.MULTILINE)
-INSTANCE = "GrampsInstance"
+
+# The ways a module can end up with a live instance. There was one until T4.0 — construct a
+# `GrampsInstance` yourself — and the check read that name directly. `seeded_tree` is the second:
+# a matrix asks for the substrate and never names the class that brings it up, so a detector
+# looking only for `GrampsInstance` calls a module services-free that starts Gramps Web, Redis,
+# two volumes and a container. Both spellings are listed rather than one generalised guess,
+# because a rule that infers "probably needs services" from something vaguer is a rule that
+# starts excusing modules nobody meant to excuse.
+NEEDS_INSTANCE = ("GrampsInstance", "seeded_tree")
 
 # This module names both things it looks for, so it matches itself. Excluded rather than
 # worked around: a check that has to be careful about its own text is one nobody will edit
@@ -51,7 +64,7 @@ def test_the_suite_has_modules_to_classify() -> None:
 @pytest.mark.parametrize("module", MODULES, ids=lambda path: path.name)
 def test_a_module_declares_the_instance_it_brings_up(module: Path) -> None:
     source = module.read_text(encoding="utf-8")
-    needs_instance = INSTANCE in source
+    needs_instance = any(spelling in source for spelling in NEEDS_INSTANCE)
     declares = declares_instance(source)
 
     if module.name.startswith("test_00_"):

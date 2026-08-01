@@ -46,6 +46,29 @@ def load_manifest(path: Path = MANIFEST_FILE) -> dict[str, str]:
     return dict(json.loads(path.read_text(encoding="utf-8")))
 
 
+def verified_input(
+    name: str, *, source_dir: Path = FIXTURES, manifest: dict[str, str] | None = None
+) -> bytes:
+    """One declared fixture input, refusing anything that is not the committed file.
+
+    Public because the reseed needs the same door: `seeded_tree` imports the fixture over raw
+    REST rather than through the mount, and a reseed that read the bytes without the digest
+    check could rebuild every class's substrate out of a fixture somebody edited by hand.
+    """
+    wanted = load_manifest() if manifest is None else manifest
+    source = source_dir / name
+    if not source.is_file():
+        raise ProbeError(f"declared backup input {name} is missing from {source_dir}")
+    data = source.read_bytes()
+    actual = digest_of(data)
+    if actual != wanted[name]:
+        raise ProbeError(
+            f"{name} has digest {actual[:12]}…, the manifest says {wanted[name][:12]}… "
+            "— regenerate the manifest deliberately, or restore the fixture"
+        )
+    return data
+
+
 class BackupDir:
     """One host directory mounted into the MCP container as `GRAMPS_BACKUP_DIR`."""
 
@@ -61,12 +84,24 @@ class BackupDir:
         self.manifest = dict(manifest) if manifest is not None else load_manifest()
 
     def reset(self) -> None:
-        """Step 0 of a reset: nothing in here survives, and what lands is what was declared."""
+        """Step 0 of a reset: nothing in here survives, and what lands is what was declared.
+
+        Emptied **in place** rather than removed and recreated. This directory is a live bind
+        mount: a container that started with it holds the inode, so replacing the directory
+        leaves the container writing into something the host has already unlinked — every later
+        export lands nowhere visible, and `assert_export` reports "the model never exported"
+        for a model that did. The postcondition is identical either way; only the identity of
+        the directory is preserved, and that is the part the mount cares about.
+        """
         staged = {name: self._verified_bytes(name) for name in self.manifest}
 
-        shutil.rmtree(self.path, ignore_errors=True)
-        self.path.mkdir(parents=True)
+        self.path.mkdir(parents=True, exist_ok=True)
         self.path.chmod(DIR_MODE)
+        for entry in self.path.iterdir():
+            if entry.is_dir() and not entry.is_symlink():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)
         for name, data in staged.items():
             target = self.path / name
             target.write_bytes(data)
@@ -82,17 +117,7 @@ class BackupDir:
         Read *before* the directory is emptied, so a bad input leaves the previous state
         alone instead of destroying it and then failing.
         """
-        source = self.source_dir / name
-        if not source.is_file():
-            raise ProbeError(f"declared backup input {name} is missing from {self.source_dir}")
-        data = source.read_bytes()
-        actual = digest_of(data)
-        if actual != self.manifest[name]:
-            raise ProbeError(
-                f"{name} has digest {actual[:12]}…, the manifest says {self.manifest[name][:12]}… "
-                "— regenerate the manifest deliberately, or restore the fixture"
-            )
-        return data
+        return verified_input(name, source_dir=self.source_dir, manifest=self.manifest)
 
     def listing(self) -> dict[str, int]:
         """File name -> size, for everything currently in the directory."""

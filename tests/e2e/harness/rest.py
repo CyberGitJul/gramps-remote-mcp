@@ -19,6 +19,11 @@ from harness import records
 
 MIN_LOGIN_GAP_S = 1.1
 TOKEN_MAX_AGE_S = 13 * 60
+DEFAULT_TIMEOUT_S = 60
+# The two calls a reseed makes. Both are synchronous on this profile — measured, plan §5: the
+# wipe answers 200 in 444 ms and the importer 201 in 1727 ms, on a 14-object tree. These are
+# ceilings for a tree an order of magnitude larger, not expectations.
+RESEED_TIMEOUT_S = 300
 
 # The 1/second limit is keyed by client IP, so the gap has to hold across *every* client in
 # this process, not per instance. Measured the hard way: two freshly constructed clients each
@@ -72,7 +77,11 @@ class GrampsRest:
         headers = {"Authorization": f"Bearer {self.token()}"}
         headers.update(kwargs.pop("headers", {}))
         reply = self.session.request(
-            method, f"{self.base_url}{path}", headers=headers, timeout=60, **kwargs
+            method,
+            f"{self.base_url}{path}",
+            headers=headers,
+            timeout=kwargs.pop("timeout", DEFAULT_TIMEOUT_S),
+            **kwargs,
         )
         if reply.status_code == 401 and retry_401:
             self.invalidate()
@@ -157,6 +166,37 @@ class GrampsRest:
         state = snapshot or self.snapshot()
         material = json.dumps(state["objects"], sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(material.encode()).hexdigest()[:16]
+
+    # -- reseeding (T4.0) ------------------------------------------------------
+
+    def wipe(self) -> None:
+        """Empty the tree. The harness's own delete, never `gramps_delete_all_objects`.
+
+        A reset that went through the product would make every class's substrate depend on the
+        code the class is testing — and it would pay `IMPORT_MIN_SETTLE`, a flat 30 s the tool
+        spends deciding whether an import that added nothing was a failure
+        (`gramps_client.py:100-106`). Reseeding is not the thing under test.
+        """
+        reply = self.request("POST", "/api/objects/delete/", timeout=RESEED_TIMEOUT_S)
+        reply.raise_for_status()
+
+    def import_bytes(self, data: bytes, *, extension: str = "gramps") -> int:
+        """Import a tree file as a raw octet-stream, the way the product does it.
+
+        Measured (plan §5): this answers **201** with an empty body on the sync profile, and it
+        is **additive** — importing into a tree that already holds the fixture doubles it. Every
+        caller here wipes first; that is not optional, and it is why the two live next to each
+        other rather than in two modules.
+        """
+        reply = self.request(
+            "POST",
+            f"/api/importers/{extension}/file",
+            headers={"Content-Type": "application/octet-stream"},
+            data=data,
+            timeout=RESEED_TIMEOUT_S,
+        )
+        reply.raise_for_status()
+        return reply.status_code
 
     def content_snapshot(self) -> dict[str, Any]:
         """Counts of every namespace, plus a content signature per record in the signed ones.
