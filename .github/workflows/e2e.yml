@@ -18,6 +18,9 @@ name: e2e
 # **Promotion rule, so it does not stay advisory by inertia:** after 20 consecutive runs whose
 # only failures were genuine, delete the `continue-on-error` line and add it to the ruleset.
 #
+# `nightly` is the only job that runs `-m e2e` whole. That is what "nightly only" means for
+# `@pytest.mark.refusal`: the negative and error-text cases run here and nowhere else.
+#
 # Stage 2 (the real-model leg) is deliberately absent. It costs money per run and is triggered by
 # hand — see tests/e2e/stage2/.
 
@@ -51,8 +54,12 @@ jobs:
       # Builds the working-tree image once (the `mcp_image` fixture, D8's default leg) and runs
       # every test that needs no services. The marker is linted by test_00_ci_legs.py, so a new
       # module cannot quietly drag an instance bring-up into this job.
+      #
+      # `not refusal` is redundant here today — every refusal case lives in a `gramps`-marked
+      # matrix — and is written anyway so the marker means one thing in all three jobs: not on a
+      # pull request. A negative case cheap enough for this leg simply does not carry it.
       - name: Docker-only e2e leg
-        run: pytest tests/e2e -m "e2e and not gramps" -q
+        run: pytest tests/e2e -m "e2e and not gramps and not refusal" -q
 
       - name: Reap anything left standing
         if: always()
@@ -80,8 +87,12 @@ jobs:
           docker pull ghcr.io/gramps-project/grampsweb:latest
           docker pull redis:alpine
 
+      # Minus the refusal cases: negative and error-text assertions carry the highest rot and
+      # the least signal per second, so they run once a night rather than on every push. The
+      # marker is linted both ways by test_00_refusal_marker.py — it takes a test off this leg,
+      # which is the one kind of annotation that cannot be left to good intentions.
       - name: Full e2e suite
-        run: pytest tests/e2e -m e2e -q
+        run: pytest tests/e2e -m "e2e and not refusal" -q
 
       - name: Reap anything left standing
         if: always()

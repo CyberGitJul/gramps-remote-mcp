@@ -64,6 +64,7 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `test_80_regressions.py` | T3.3: the cold-client 429 as a token *count*, and `IMPORT_MIN_SETTLE` |
 | `test_81_image_contract.py` | T3.3: the in-image import (D19) and the `mcp<2` pin, where it is installed |
 | `test_00_ci_legs.py` | T3.4: every module declares whether it needs an instance, both directions linted |
+| `test_00_refusal_marker.py` | T4.0: `@pytest.mark.refusal` proves a refusal, and is used consistently once used |
 
 Phase 0 created the probe and the harness skeleton; T1.1 added the gate, T1.2 the reaper, T1.3
 the restartable instance, T1.4 the oracle plus the token audit, T1.5 the container and T1.6 the
@@ -150,7 +151,7 @@ hand, so a tag can move out from under a run in flight. The resolved id is what 
 ```bash
 pytest -q                       # unit suite only: 259 passed, e2e deselected, no Docker
 pytest -q -m e2e                # everything, including live Gramps Web instances
-pytest -q -m "e2e and not gramps"   # Docker but no services — the required CI leg, ~40 s
+pytest -q -m "e2e and not gramps and not refusal"   # the required CI leg: Docker, no services, ~40 s
 pytest -q -m e2e -k test_00     # no Docker at all, ~4 s (also a step in the lint workflow)
 pytest --e2e-reap-only          # reap stale gwe2e-* resources, prune artifact dirs, exit
 pytest --e2e-reap-only --e2e-force --e2e-keep-runs=1   # also remove a *running* instance
@@ -162,11 +163,26 @@ pytest --e2e-reap-only --e2e-force --e2e-keep-runs=1   # also remove a *running*
 
 ### Three legs, and which is required
 
-`image-contract` in `.github/workflows/e2e.yml` runs `-m "e2e and not gramps"` and is
-**required**: Docker only, no Gramps Web, no Redis, no credentials, no secrets — so nothing in
-it can be red for a reason that is not a defect. `stage1` runs the whole suite against live
-instances and is **advisory** until 20 consecutive runs have failed only for genuine reasons;
-the promotion rule is written into the workflow so it cannot stay advisory by inertia.
+`image-contract` in `.github/workflows/e2e.yml` runs `-m "e2e and not gramps and not refusal"`
+and is **required**: Docker only, no Gramps Web, no Redis, no credentials, no secrets — so
+nothing in it can be red for a reason that is not a defect. `stage1` runs `-m "e2e and not
+refusal"` against live instances and is **advisory** until 20 consecutive runs have failed only
+for genuine reasons; the promotion rule is written into the workflow so it cannot stay advisory
+by inertia. `nightly` is the only job that runs `-m e2e` whole — that is what "nightly only"
+means for the third marker.
+
+**`refusal` — the marker whose effect is less CI.** The negative and error-text cases of the
+Stage-1 matrices carry the highest rot and the least signal per second, so they run once a night
+instead of on every push. `test_00_refusal_marker.py` lints it, asymmetrically, because the two
+mistakes are not equally bad. A **marked case that proves no refusal** is a test that quietly
+stopped running on pull requests while still reading as coverage — checked everywhere, no
+exceptions; a case proves one by calling `assert_refusal(...)` *or* by reading `is_error`, since
+several honest negatives have no authored fragment to name and `test_00_vocabulary.py` is right
+to reject one. A **refusing case without the marker** merely costs time, and demanding the marker
+everywhere would be wrong: the eight committed `assert_refusal` callers exist to prove the
+*helper* works, two of them live, and they are the positive control for every marked case that
+trusts it. So the marker is enforced **per module, once that module uses it** — which catches the
+state that actually goes wrong: half a matrix marked, the other half silently back on the PR tier.
 
 Which leg a module belongs to is **declared, not inferred**: the seven modules that bring up an
 instance carry `pytestmark = pytest.mark.gramps`, and `test_00_ci_legs.py` lints both
