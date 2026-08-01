@@ -15,6 +15,8 @@ from typing import Any
 
 import requests
 
+from harness import records
+
 MIN_LOGIN_GAP_S = 1.1
 TOKEN_MAX_AGE_S = 13 * 60
 
@@ -154,4 +156,43 @@ class GrampsRest:
         """
         state = snapshot or self.snapshot()
         material = json.dumps(state["objects"], sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(material.encode()).hexdigest()[:16]
+
+    def content_snapshot(self) -> dict[str, Any]:
+        """Counts of every namespace, plus a content signature per record in the signed ones.
+
+        Six reads: one `/api/metadata/` and one listing per signed namespace. The tag map comes
+        out of the listing it already fetched rather than a seventh call.
+        """
+        counts = self.object_counts()
+        fetched = {namespace: self.objects(namespace) for namespace in records.SIGNED}
+        tags = {str(tag.get("handle", "")): str(tag.get("name", "")) for tag in fetched["tags"]}
+        signed = {
+            namespace: sorted(
+                (
+                    (
+                        str(record.get("gramps_id", "")),
+                        records.content_signature(namespace, record, tags),
+                    )
+                    for record in fetched[namespace]
+                ),
+                key=lambda pair: pair[0],
+            )
+            for namespace in records.SIGNED
+        }
+        return {"counts": counts, "signed": signed}
+
+    def content_fingerprint(self, snapshot: dict[str, Any] | None = None) -> str:
+        """A digest of *content*, which is the question `fingerprint` deliberately does not ask.
+
+        `fingerprint` digests `(gramps_id, handle)` pairs, so it is byte-identical after
+        `set_surname`, `set_gender`, `confirm_person` or `update_blog_post` — every field write
+        this server has. That is right for "did this call add or remove anything" and useless
+        for "is this still the tree we seeded", which is what a class-scoped reseed has to
+        decide. The two are separate rather than merged because a reset that fired on every
+        field write would be a reset that fires constantly, and one that fires on none is the
+        one that hands the next class somebody else's tree.
+        """
+        state = snapshot or self.content_snapshot()
+        material = json.dumps(state, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(material.encode()).hexdigest()[:16]

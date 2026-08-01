@@ -16,15 +16,50 @@ test.
 `snapshot` is the `{counts, objects}` shape `harness/movement.py` already eats, so identity
 movement is computed by the same code Stage 1 uses rather than a second implementation of the
 same set difference.
+
+The record vocabulary — `first_name`, the signatures, all of it — moved down to
+`harness/records.py` when Stage 1 needed the same sentence for `seeded_tree` (T4.0). It is
+re-exported here rather than moved out from under the callers: `checks_record.py`,
+`checks_tree.py`, `grading.py` and `__main__.py` reach it as `state_mod.<name>`, and this module
+is where they have always looked. Nothing about the signatures changed in the move.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from harness.records import (
+    children,
+    first_name,
+    members,
+    name_surname,
+    name_type,
+    person_signature,
+    signature,
+    source_signature,
+    surname,
+    tag_names,
+)
+
 from stage2 import subjects
+
+__all__ = [
+    "NAMESPACES",
+    "State",
+    "capture",
+    "children",
+    "first_name",
+    "members",
+    "name_surname",
+    "name_type",
+    "person_signature",
+    "signature",
+    "source_signature",
+    "surname",
+    "tag_handles",
+    "tag_names",
+]
 
 # Everything a class-A assertion can read. `notes` and `tags` are counted namespaces and both
 # move on writes nobody asked for — a blog post creates a tag, `add_person` creates another.
@@ -103,120 +138,6 @@ def capture(rest: Any) -> State:
         counts=dict(counts),
         records={namespace: tuple(rest.objects(namespace)) for namespace in NAMESPACES},
     )
-
-
-def first_name(person: Mapping[str, Any]) -> str:
-    return str((person.get("primary_name") or {}).get("first_name", ""))
-
-
-def surname(person: Mapping[str, Any]) -> str:
-    return name_surname(person.get("primary_name") or {})
-
-
-def name_surname(name: Mapping[str, Any]) -> str:
-    entries = name.get("surname_list") or []
-    return str(entries[0].get("surname", "")) if entries else ""
-
-
-def name_type(name: Mapping[str, Any]) -> str:
-    """Measured 2026-07-31: the API answers with a bare string (`"Married Name"`)."""
-    return str(name.get("type", ""))
-
-
-def members(family: Mapping[str, Any], ids: Mapping[str, str]) -> list[str]:
-    """Both parent slots, as ids. Never *which* slot — that assignment is what uc2 tests."""
-    return sorted(
-        ids[handle]
-        for handle in (family.get("father_handle"), family.get("mother_handle"))
-        if handle and handle in ids
-    )
-
-
-def children(family: Mapping[str, Any], ids: Mapping[str, str]) -> list[str]:
-    return sorted(
-        ids[str(ref.get("ref", ""))]
-        for ref in family.get("child_ref_list") or []
-        if str(ref.get("ref", "")) in ids
-    )
-
-
-def tag_names(record: Mapping[str, Any], tags: Mapping[str, str]) -> tuple[str, ...]:
-    """A record's tags by name.
-
-    By name and not by handle on purpose: an import re-creates an identical tag as a *new*
-    object (measured — uc19's import brings its own `Unbestätigt` and Gramps does not merge),
-    and a bystander whose tag handle moved underneath them has not been touched by the call.
-    """
-    return tuple(sorted(tags[handle] for handle in record.get("tag_list") or [] if handle in tags))
-
-
-def person_signature(person: Mapping[str, Any], tags: Mapping[str, str]) -> tuple[Any, ...]:
-    """What "this person was not touched" means.
-
-    `family_list` is deliberately **not** in it. Deleting a family rewrites the membership of
-    both spouses, and uc16 does exactly that on purpose; including it would red every bystander
-    of a legitimate call. Family membership is asserted where it is the point, by the `family`
-    kind, against named subjects.
-    """
-    alternates = tuple(
-        (name_surname(name), name_type(name)) for name in person.get("alternate_names") or []
-    )
-    return (
-        first_name(person),
-        surname(person),
-        name_type(person.get("primary_name") or {}),
-        person.get("gender"),
-        tag_names(person, tags),
-        alternates,
-    )
-
-
-def family_signature(family: Mapping[str, Any], ids: Mapping[str, str]) -> tuple[Any, ...]:
-    """Both parent slots *and* which slot each sits in: a swap is a change, and uc2 says so."""
-    return (
-        ids.get(str(family.get("father_handle") or ""), ""),
-        ids.get(str(family.get("mother_handle") or ""), ""),
-        tuple(children(family, ids)),
-    )
-
-
-def source_signature(source: Mapping[str, Any], tags: Mapping[str, str]) -> tuple[Any, ...]:
-    """Title, author and which notes hang off it — the note's *text* belongs to the note."""
-    return (
-        source.get("title", ""),
-        source.get("author", ""),
-        tuple(source.get("note_list") or []),
-        tag_names(source, tags),
-    )
-
-
-def signature(
-    namespace: str, record: Mapping[str, Any], tags: Mapping[str, str]
-) -> tuple[Any, ...]:
-    """What "this record was not touched" means, per namespace.
-
-    `people` needs the handle→id map for nothing, `families` needs it for everything; the map is
-    rebuilt from the record's own capture by the caller that holds it.
-    """
-    if namespace == "families":
-        return family_signature(record, _ids_of(record))
-    if namespace == "sources":
-        return source_signature(record, tags)
-    return person_signature(record, tags)
-
-
-def _ids_of(family: Mapping[str, Any]) -> dict[str, str]:
-    """Families are compared by *handle* rather than id: the map belongs to a capture, and a
-    signature is per record. Handles are stable across a call, which is the property needed."""
-    return {
-        handle: handle
-        for handle in (
-            str(family.get("father_handle") or ""),
-            str(family.get("mother_handle") or ""),
-            *(str(ref.get("ref", "")) for ref in family.get("child_ref_list") or []),
-        )
-        if handle
-    }
 
 
 def tag_handles(state: State) -> dict[str, str]:
