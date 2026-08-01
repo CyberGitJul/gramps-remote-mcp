@@ -36,8 +36,6 @@ BASE = {
     "GRAMPS_USERNAME": "nobody",
     "GRAMPS_PASSWORD": "unused",
 }
-TOOLS_WITHOUT_DESTRUCTIVE = 27
-TOOLS_WITH_DESTRUCTIVE = 31
 
 
 @contextmanager
@@ -123,6 +121,12 @@ def test_only_the_exact_string_one_arms_the_destructive_tools(
 
     `"true"`, `"yes"` and `"on"` are all `True` to pydantic 2.13.4 (measured), so a gate that
     ever moved to a coercing reader would arm a public deployment that asked for the opposite.
+
+    Asserted as *absence and presence*, not as 27 and 31. Those two numbers describe this
+    working tree, and this test also runs against the released artifact, where an older image
+    legitimately serves a different number — a red there would say "the gate is broken" about a
+    gate that is doing exactly its job. The counts are pinned where they belong, against the
+    committed contract, in `test_08_protocol.py`.
     """
     label = f"gate-{value or 'empty'}"
     with container(
@@ -130,7 +134,7 @@ def test_only_the_exact_string_one_arms_the_destructive_tools(
     ) as mcp:
         served = tool_contract.from_wire(tool_contract.read_pages(mcp.list_tools))
 
-    assert len(served) == TOOLS_WITHOUT_DESTRUCTIVE
+    assert served, "the server listed no tools at all — absence here would prove nothing"
     assert not [name for name in served if name.startswith(tool_contract.DESTRUCTIVE_PREFIX)]
 
 
@@ -141,4 +145,4 @@ def test_the_exact_string_one_does_arm_them(mcp_image: ImageRef, e2e_runid: str)
     ) as mcp:
         served = tool_contract.from_wire(tool_contract.read_pages(mcp.list_tools))
 
-    assert len(served) == TOOLS_WITH_DESTRUCTIVE
+    assert [name for name in served if name.startswith(tool_contract.DESTRUCTIVE_PREFIX)]

@@ -131,12 +131,19 @@ def test_this_server_serves_its_whole_tool_list_in_one_page(armed: McpContainer)
 
     If that ever changes, this is the test that says so — and `read_pages` already follows the
     cursor, so the contract comparison above will keep telling the truth either way.
+
+    **Deliberately says nothing about how many tools that page holds.** It used to, and that was
+    a false red waiting for the released leg: an older artifact serves *its* whole list in one
+    page, correctly, and the comparison against this tree's contract reported `assert 30 == 31`
+    under a test name that reads as "the shipped image does not serve its whole tool list" —
+    the twice-shipped image defect, alleged against a healthy image. The count is not lost; it
+    is asserted, in full and guarded by the leg, two tests above.
     """
     collected = pages(armed)
 
     assert len(collected) == 1
     assert collected[0].get("nextCursor") is None
-    assert len(collected[0]["tools"]) == len(tool_contract.load()["tools"])
+    assert collected[0]["tools"], "tools/list answered with an empty page"
 
 
 def test_a_gated_tool_answers_with_a_result_not_a_protocol_error(unarmed: McpContainer) -> None:

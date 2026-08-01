@@ -129,6 +129,16 @@ GRAMPS_E2E_IMAGE_LEG=released pytest -q -m e2e       # the artifact: gramps-remo
 GRAMPS_E2E_IMAGE_LEG=released GRAMPS_E2E_IMAGE=gramps-remote-mcp:v0.5.1 pytest -q -m e2e
 ```
 
+**What the released leg may be pointed at.** The current or previous release — not arbitrary
+history. Anything derived from this tree (the committed tool contract, absolute counts) is
+guarded by `only_the_working_tree()` and skips there with the resolved image id named; what
+remains is what must hold of *any* artifact. But a tool that did not exist yet cannot be tested
+against an image from before it shipped: `gramps-remote-mcp:v0.4.0` predates the wipe, so a use
+case that calls it is a legitimate red against a legitimately old image. Verified 2026-08-01:
+`GRAMPS_E2E_IMAGE_LEG=released GRAMPS_E2E_IMAGE=gramps-remote-mcp:v0.4.0` runs `test_08` and
+`test_01` green (15 passed, 2 skipped) even though that image serves 30 tools and this tree
+pins 31.
+
 A misspelt leg stops the run instead of falling back — a silent fallback to `:latest` is the
 stale-image failure mode, and a stale `:latest` has already once looked exactly like "the new
 tools are missing". Containers are then started **by image id**, not by tag: a concurrent run's

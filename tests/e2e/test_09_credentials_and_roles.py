@@ -20,6 +20,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import pytest
+from fixtures.cast import COUSINS
 from harness import tool_contract
 from harness.backup_dir import BackupDir
 from harness.gramps_instance import (
@@ -127,7 +128,13 @@ def test_the_server_refuses_the_owner_only_tools_for_an_editor(
     """
     rest = GrampsRest(instance.url, OWNER_USER, OWNER_PW)
     arguments = {
-        "gramps_import_file": {"filename": "editor-probe.gramps"},
+        # Staged by `BackupDir.reset()` in `as_editor`, deliberately not the file the export
+        # test writes. Naming that one made this test pass only because a sibling had run
+        # first: without it `backup_store.resolve_import_path` raises `FileNotFoundError`
+        # before any request leaves the container, `is_error` is still True, and the missing
+        # 403 reads as "the role check is gone" — a harness gap wearing a product failure's
+        # clothes, which is the shape that has already produced one bad draft issue here.
+        "gramps_import_file": {"filename": COUSINS["filename"]},
         "gramps_delete_all_objects": {
             "confirm": True,
             "expected_count": sum(rest.object_counts().values()),
@@ -155,8 +162,8 @@ def test_a_wrong_password_starts_fine_and_fails_on_the_first_call(
 ) -> None:
     """The lazy client makes a dead credential a *runtime* failure, and this pins that shape.
 
-    Both halves are asserted on purpose: the handshake succeeds and the tool list is complete,
-    so "the server is up" says nothing about whether it can reach anything.
+    Both halves are asserted on purpose: the handshake succeeds and the tool being called is
+    listed, so "the server is up" says nothing about whether it can reach anything.
 
     **Measured 2026-08-01, and not what was assumed:** a wrong password is answered by
     `/api/token/` with **403 FORBIDDEN**, not 401. The distinction is not cosmetic — the client
@@ -182,7 +189,11 @@ def test_a_wrong_password_starts_fine_and_fails_on_the_first_call(
     finally:
         assert mcp.close() == [], "the MCP container outlived its test"
 
-    assert len(served) == len(tool_contract.load()["gate_off"])
+    # Not a count: "the tool list is complete" is a statement about *this* tree, and this test
+    # also runs against an older released artifact. What has to hold on any image is that the
+    # server came up and listed the tool the next line then calls — otherwise the failure below
+    # would be about a missing tool rather than about a dead credential.
+    assert "gramps_get_object_counts" in served
     assert answer.is_error is True
     assert FORBIDDEN in answer.text
     assert "/api/token/" in answer.text, "the failure is the login, not the endpoint that asked"
