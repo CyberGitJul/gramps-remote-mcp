@@ -145,6 +145,12 @@ class Sweep:
         `main()`, and the report was never written: 26 finished use cases and the money they
         cost, discarded because the 27th proved nothing about the product. Aborting the sweep
         is the design (a broken run must not vote); throwing away the evidence never was.
+
+        The same was still true one path over. Subject resolution happens in `_addressed` and
+        in `evidence_for`, both outside the grading `try`, and raises a plain `ProbeError` when
+        the catalog and the fixture have drifted apart — so every harness fault that is *not*
+        a check discarded the run the old way. A fault is named and kept here, whichever of
+        the three it is; only `SpendExceeded` is a stop rather than an abort.
         """
         verdicts: list[Verdict] = []
         for use_case in cases:
@@ -155,6 +161,12 @@ class Sweep:
                 break
             except HarnessAborted as broken:
                 self.aborted = str(broken)
+                break
+            except ProbeError as broken:
+                # Prefixed, because these are raised out of the resolver and carry a selector
+                # rather than a use case: a report that cannot say which one stopped it sends
+                # the reader back through every artifact directory by hand.
+                self.aborted = f"{use_case.id}: {broken}"
                 break
         return verdicts
 

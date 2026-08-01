@@ -57,6 +57,13 @@ SHAPES: dict[str, Shape] = {
         "a declared subject's name, or null for 'nobody'",
         lambda v: v is None or (isinstance(v, str) and bool(v)),
     ),
+    # Same syntax as `subject`, deliberately a different name: the validator cannot tell from
+    # the string whether the subject behind it stands for one object or seven, and uc21 paid
+    # for three model runs to discover that the reader could not either.
+    "subject*": Shape(
+        "a declared subject's name, graded across every object it names",
+        lambda v: isinstance(v, str) and bool(v),
+    ),
     "subjects": Shape(
         "a list of declared subject names",
         lambda v: isinstance(v, list) and all(isinstance(n, str) and n for n in v),
@@ -129,10 +136,11 @@ KINDS: dict[str, Kind] = {
         shapes={"namespace": "namespace", "subjects": "subjects"},
     ),
     "person": Kind(
-        "named leaf values on one person's record, read back over REST — first_name, "
-        "surname, gender, name_type",
+        "named leaf values on a person's record, read back over REST — first_name, surname, "
+        "gender, name_type. Grades every person the subject names, so 'all seven of them' is "
+        "one assertion rather than seven that have to be kept in step by hand",
         required=("subject", "fields"),
-        shapes={"subject": "subject", "fields": "fields"},
+        shapes={"subject": "subject*", "fields": "fields"},
     ),
     "alternates": Kind(
         "a person's alternate names: how many there are, and which (surname, type) pairs are "
@@ -213,11 +221,36 @@ KINDS: dict[str, Kind] = {
 
 GATING = frozenset(name for name, kind in KINDS.items() if kind.grade == A)
 
-# Which parameters hold subject names rather than values. Listed once, here, because both the
-# validator and T2.5's grader have to agree on it: a parameter that holds a subject and is not
-# listed would be resolved by nobody and compared as the literal string it is.
-ONE_SUBJECT = frozenset({"subject", "father", "mother"})
-MANY_SUBJECTS = frozenset({"subjects", "children"})
+# Which shapes hold subject names rather than values, and which of them may stand for more
+# than one object. Both the validator and T2.5's grader have to agree on this: a parameter
+# that holds a subject and is not covered would be resolved by nobody and compared as the
+# literal string it is.
+NAMES_ONE_SUBJECT = frozenset({"subject", "subject?", "subject*"})
+NAMES_SEVERAL_SUBJECTS = frozenset({"subjects"})
+# Shapes whose referent is allowed to be a set. Everything else resolves through
+# `Evidence.ids()`, which grades one object and refuses to guess which.
+GRADES_A_SET = frozenset({"subject*", "subjects"})
+
+# Derived, never written out beside `shapes=`. A hand-kept copy is how the Dockerfile's `COPY`
+# list has shipped a broken image twice: the registry grows a parameter, the copy does not, and
+# the new parameter is silently outside every check that reads the copy.
+ONE_SUBJECT = frozenset(
+    parameter
+    for kind in KINDS.values()
+    for parameter, shape in kind.shapes.items()
+    if shape in NAMES_ONE_SUBJECT
+)
+MANY_SUBJECTS = frozenset(
+    parameter
+    for kind in KINDS.values()
+    for parameter, shape in kind.shapes.items()
+    if shape in NAMES_SEVERAL_SUBJECTS
+)
+
+
+def grades_a_set(kind_name: str, parameter: str) -> bool:
+    """Whether this kind grades every object its subject names, or exactly one."""
+    return KINDS[kind_name].shapes.get(parameter) in GRADES_A_SET
 
 
 def unknown_parameters(kind_name: str, given: set[str]) -> set[str]:

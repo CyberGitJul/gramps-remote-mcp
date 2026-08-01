@@ -24,13 +24,20 @@ from typing import Any
 
 from harness.docker_util import ProbeError
 
-from .assertion_kinds import KINDS, MANY_SUBJECTS, ONE_SUBJECT, missing_parameters, wrong_shapes
+from .assertion_kinds import (
+    KINDS,
+    MANY_SUBJECTS,
+    ONE_SUBJECT,
+    grades_a_set,
+    missing_parameters,
+    wrong_shapes,
+)
 from .assertion_kinds import A as GRADE_A
 from .assertion_kinds import unknown_parameters as unknown_kind_parameters
 from .catalog import EVERYTHING, UseCase
 from .checks_record import ALTERNATE_KEYS
 from .leak_lint import leaks, stale, unwaived
-from .subjects import NEW, PLACEHOLDER, Tree, resolve_all
+from .subjects import COUNT, NEW, PLACEHOLDER, Tree, resolve_all
 
 # `I0000`, `F0021`, `S0003`: a Gramps id written into a use case is the defect T2.2 exists to
 # remove. It is not a property of the person — regrow the fixture, insert one subject in the
@@ -52,6 +59,32 @@ def problems(use_cases: dict[str, UseCase], tools: set[str], tree: Tree) -> list
         found += _placeholders(use_case)
         found += _unused_subjects(use_case)
         found += _hardcoded_ids(use_case)
+        found += subject_arity(use_case)
+    return found
+
+
+def subject_arity(use_case: UseCase) -> list[str]:
+    """A parameter that grades one object may not name a subject that stands for several.
+
+    Public because it is worth running on its own: this is the check uc21 needed and did not
+    have. `{surname: Aschenblum, count: 7}` is a well-formed subject name by every syntactic
+    measure — the mismatch only exists between the declaration and its reader, and neither
+    half is wrong on its own.
+    """
+    counted = {
+        name: selector[COUNT] for name, selector in use_case.subjects.items() if COUNT in selector
+    }
+    found = []
+    for assertion in use_case.assertions:
+        for key, value in assertion.params.items():
+            if key not in ONE_SUBJECT or grades_a_set(assertion.kind, key):
+                continue
+            if value in counted:
+                found.append(
+                    f"{use_case.id}: {assertion.id} reads {key!r} as one object, but "
+                    f"{value!r} names {counted[value]} — {assertion.kind} has no way to say "
+                    "which of them it meant"
+                )
     return found
 
 

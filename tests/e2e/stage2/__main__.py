@@ -22,11 +22,11 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import sys
 from pathlib import Path
 
 from fixtures import cast
+from harness.backup_dir import BackupDir
 from harness.docker_util import ProbeError
 from harness.gramps_instance import OWNER_PW, OWNER_USER, ROLE_OWNER, GrampsInstance
 from harness.mcp_container import McpContainer, container_name, image_from_env
@@ -68,15 +68,25 @@ def select(args: argparse.Namespace) -> list:
     return sweep.by_tier(cases, args.tier)
 
 
+def stage_backup(root: Path) -> Path:
+    """The mounted backup directory, holding exactly the inputs D17 declared.
+
+    Not a copy of the tree fixture: `BackupDir` stages the whole committed manifest and
+    verifies each file against its digest. Copying by hand is what left uc19 asking a
+    correctly-wired server for a file nobody had put there, three paid runs in a row — and a
+    second enumeration of the same list would fall behind it again.
+    """
+    backup = BackupDir(root / "backup")
+    backup.reset()  # chmods the directory too: the container runs as a different uid
+    return backup.path
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse(argv)
     chosen = select(args)
     runid = new_runid()
     root = run_dir(REPO_ROOT, runid)
-    backup = root / "backup"
-    backup.mkdir(parents=True, exist_ok=True)
-    shutil.copy(FIXTURE, backup / FIXTURE.name)
-    backup.chmod(0o777)  # the container runs as a different uid than this process
+    backup = stage_backup(root)
 
     instance = GrampsInstance(runid)
     print(f"run {runid} → {root}", flush=True)

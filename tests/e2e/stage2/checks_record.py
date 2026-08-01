@@ -46,16 +46,23 @@ def read_field(record: Mapping[str, Any], field: str) -> Any:
 
 
 def person(params: Params, evidence: Any) -> str | None:
-    gramps_id = evidence.ids(params["subject"])
-    record = evidence.after.by_id("people").get(gramps_id)
-    if record is None:
-        return f"people/{gramps_id} is not in the tree after the call"
-    for field, expected in dict(params["fields"]).items():
-        actual = read_field(record, str(field))
-        if actual is UNKNOWN:
-            return f"{field!r} is not a field this suite knows how to read"
-        if actual != expected:
-            return f"people/{gramps_id}.{field} is {actual!r}, expected {expected!r}"
+    """Every person the subject names, not the first one.
+
+    uc21 says "there are seven": a check that graded one of them would pass a call that
+    renamed a single Aschenblum and left six behind, which is exactly the mistake a bulk tool
+    makes when it is handed one id instead of a set.
+    """
+    people = evidence.after.by_id("people")
+    for gramps_id in evidence.id_set([params["subject"]]):
+        record = people.get(gramps_id)
+        if record is None:
+            return f"people/{gramps_id} is not in the tree after the call"
+        for field, expected in dict(params["fields"]).items():
+            actual = read_field(record, str(field))
+            if actual is UNKNOWN:
+                return f"{field!r} is not a field this suite knows how to read"
+            if actual != expected:
+                return f"people/{gramps_id}.{field} is {actual!r}, expected {expected!r}"
     return None
 
 

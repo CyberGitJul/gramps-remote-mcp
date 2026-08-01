@@ -65,6 +65,16 @@ class GradingError(ProbeError):
     """A check could not be evaluated at all. A harness fault, never a product finding."""
 
 
+class CatalogFault(GradingError):
+    """The use case is wrong about itself, so nothing it says about the tree can be read.
+
+    Separate from the `ProbeError` a subject lookup raises when the *call* produced nothing:
+    that one is the finding, this one is the suite. They shared a channel until uc21 spent
+    three model runs proving a `count: 7` subject cannot be read by a kind that grades one,
+    and the sweep drafted a public issue about the product for it.
+    """
+
+
 @dataclass(frozen=True)
 class BackupEntry:
     """One file that appeared in the mounted backup directory during the call."""
@@ -100,7 +110,7 @@ class Evidence:
         """One subject's id. `new:<namespace>` is whatever arrived during this call."""
         resolved = self.id_set([name])
         if len(resolved) != 1:
-            raise ProbeError(f"subject {name!r} names {len(resolved)} objects where one is meant")
+            raise CatalogFault(f"subject {name!r} names {len(resolved)} objects where one is meant")
         return resolved[0]
 
     def id_set(self, names: Iterable[str]) -> list[str]:
@@ -111,7 +121,7 @@ class Evidence:
                 found.append(self._arrival(str(name)))
                 continue
             if name not in self.named:
-                raise ProbeError(f"subject {name!r} is not declared by this use case")
+                raise CatalogFault(f"subject {name!r} is not declared by this use case")
             value = self.named[name]
             found.extend(value if isinstance(value, tuple) else [value])
         return sorted(found)
@@ -186,6 +196,13 @@ def _run(assertion: Any, evidence: Evidence) -> Outcome:
     kind = KINDS[assertion.kind]
     try:
         detail = CHECKS[assertion.kind](assertion.params, evidence)
+    except CatalogFault as fault:
+        # Caught before the finding channel below, and worded like the other harness faults so
+        # an operator reads one sentence for "the suite is wrong" however it was reached.
+        raise GradingError(
+            f"{assertion.id} ({assertion.kind}) could not be evaluated: {fault} — that is a "
+            "harness bug, not a finding"
+        ) from fault
     except ProbeError as error:
         # A subject that cannot be resolved *after* the call is a statement about the call —
         # `new:people` with nothing new is exactly the failure the use case is looking for.

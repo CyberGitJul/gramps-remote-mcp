@@ -151,6 +151,29 @@ def test_the_abort_still_reads_as_a_harness_fault_and_not_as_a_finding() -> None
     assert verdicts == [] and driven.aborted
 
 
+def test_a_subject_that_no_longer_fits_the_tree_keeps_the_evidence_too() -> None:
+    """The same hole as D2, one path over.
+
+    `HarnessAborted` was taught to keep what the sweep already had. Subject resolution runs
+    before that — in `_addressed` and in `evidence_for` — and raises a bare `ProbeError` when
+    the fixture and the catalog have drifted apart. That one still escaped the loop, escaped
+    `main()`, and wrote no report: a drifted fixture is exactly the fault most likely to hit
+    every use case, so it is the one that would discard the most paid runs.
+    """
+    driven = build(RecordingRunner(runner.OK))
+    gone = {"namespace": "people", "first_name": "Wendelin", "surname": "Vergangen"}
+    cases = [
+        use_case("Everything on file for {target}.", subjects_={"target": HER}, identifier="uc1"),
+        use_case("Everything on file for {target}.", subjects_={"target": gone}, identifier="uc2"),
+    ]
+
+    verdicts = driven.run(cases)
+
+    assert [verdict.use_case for verdict in verdicts] == ["uc1"]
+    assert "uc2" in driven.aborted, "the report has to name the use case that stopped it"
+    assert not driven.stopped, "a drifted subject is a fault, not a budget"
+
+
 def test_the_report_says_at_the_top_that_the_sweep_was_aborted() -> None:
     """Skimmed, a partial table is indistinguishable from a whole one."""
     written = report.summary([], [], spent=2.31, aborted="uc26: the server was not reachable")
