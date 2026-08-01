@@ -24,13 +24,13 @@ from __future__ import annotations
 
 import gzip
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from harness.docker_util import ProbeError
 
-from stage2 import grading, runner
+from stage2 import grading, runner, subjects
 from stage2.catalog import UseCase
 from stage2.gates import Attempt, Verdict, escalate
 from stage2.gates import recurring as gates_recurring
@@ -80,6 +80,8 @@ class Sweep:
         self.max_spend_usd = max_spend_usd
         self.spent = 0.0
         self.graded: list[Graded] = []
+        self.aborted = ""
+        self.stopped = ""
 
     def attempt(self, use_case: UseCase) -> Attempt:
         """One reset, one model run, one grading pass."""
@@ -88,7 +90,7 @@ class Sweep:
         listed = self._backup_listing()
         before = self.capture()
 
-        run = self.driver.run(use_case)
+        run = self.driver.run(self._addressed(use_case, before))
         self.spent += run.cost_usd
 
         after = self.capture()
@@ -129,14 +131,49 @@ class Sweep:
         return Verdict(use_case.id, tuple(attempts), gates_recurring(attempts))
 
     def run(self, cases: Sequence[UseCase], **limits: int) -> list[Verdict]:
-        """Every use case in order. A spent budget stops the sweep and keeps what it has."""
+        """Every use case in order, K of N each."""
+        return self._each(cases, lambda use_case: self.verdict(use_case, **limits))
+
+    def repeat_all(self, cases: Sequence[UseCase], times: int) -> list[Verdict]:
+        """`--repeats N` over several use cases, stopping the same way `run` does."""
+        return self._each(cases, lambda use_case: self.repeat(use_case, times))
+
+    def _each(self, cases: Sequence[UseCase], one: Callable[[UseCase], Verdict]) -> list[Verdict]:
+        """Both kinds of stop keep what they already have.
+
+        `SpendExceeded` always did. `HarnessAborted` did not — it escaped this loop, escaped
+        `main()`, and the report was never written: 26 finished use cases and the money they
+        cost, discarded because the 27th proved nothing about the product. Aborting the sweep
+        is the design (a broken run must not vote); throwing away the evidence never was.
+        """
         verdicts: list[Verdict] = []
         for use_case in cases:
             try:
-                verdicts.append(self.verdict(use_case, **limits))
-            except SpendExceeded:
+                verdicts.append(one(use_case))
+            except SpendExceeded as stop:
+                self.stopped = str(stop)
+                break
+            except HarnessAborted as broken:
+                self.aborted = str(broken)
                 break
         return verdicts
+
+    def _addressed(self, use_case: UseCase, before: State) -> UseCase:
+        """The use case with its prompt's `{subject}` placeholders filled from *this* tree.
+
+        Resolved against the before-capture for the same reason grading is: the ids belong to
+        the tree the run starts on, and a use case may not write one down.
+        """
+        filled = subjects.fill(
+            use_case.prompt, subjects.resolve_all(dict(use_case.subjects), before.tree)
+        )
+        standing = subjects.unfilled(filled)
+        if standing:
+            raise HarnessAborted(
+                f"{use_case.id}: the prompt still carries {standing} — a model cannot answer a "
+                "placeholder, and a run that spends money on one proves nothing"
+            )
+        return replace(use_case, prompt=filled)
 
     def _check_budget(self) -> None:
         if self.max_spend_usd is not None and self.spent >= self.max_spend_usd:

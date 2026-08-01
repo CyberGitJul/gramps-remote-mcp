@@ -34,14 +34,39 @@ def summary(
     spent: float,
     budget: float | None = None,
     stamp: str = "",
+    aborted: str = "",
+    stopped: str = "",
 ) -> str:
     """The whole report, as markdown."""
     lines = [TITLE, ""]
     if stamp:
         lines += [f"Run: {stamp}", ""]
+    lines += _interrupted(aborted, stopped)
     lines += _header(spent, budget) + [""] + _table(verdicts) + [""]
     lines += _findings(verdicts, graded)
     return "\n".join(lines) + "\n"
+
+
+def _interrupted(aborted: str, stopped: str) -> list[str]:
+    """Why the sweep stopped early — at the top, where it cannot be skimmed past.
+
+    A partial run that does not say it is partial reads as a whole one: once the table is the
+    only thing anybody looks at, "26 of 27 passed" is indistinguishable from "27 of 27 passed".
+    """
+    if aborted:
+        return [
+            "## This sweep was aborted",
+            "",
+            f"> {aborted}",
+            "",
+            "Only the use cases below finished; everything after the abort was **not run**. A "
+            "harness fault is never a finding about the product, and this is not a clean pass "
+            "over the catalog.",
+            "",
+        ]
+    if stopped:
+        return ["## This sweep stopped on its budget", "", f"> {stopped}", ""]
+    return []
 
 
 def drafts(verdicts: Sequence[Verdict], graded: Sequence[Graded]) -> list[tuple[str, str]]:

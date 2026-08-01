@@ -101,6 +101,11 @@ def main(argv: list[str] | None = None) -> int:
         verdicts = _sweep(driven, chosen, args)
         _write(root, verdicts, driven, runid)
         print(f"spent ${driven.spent:.4f} · report {root / 'summary.md'}", flush=True)
+        if driven.aborted:
+            # Exit 2, not 1: a harness fault is not a finding, and a caller that cannot tell
+            # them apart would read an aborted sweep as the product having failed.
+            print(f"ABORTED · {driven.aborted}", flush=True)
+            return 2
         return 1 if any(verdict.reportable for verdict in verdicts) else 0
     finally:
         harness_mcp.close()
@@ -110,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _sweep(driven: sweep.Sweep, chosen: list, args: argparse.Namespace) -> list:
     if args.repeats:
-        return [driven.repeat(case, args.repeats) for case in chosen]
+        return driven.repeat_all(chosen, args.repeats)
     return driven.run(chosen)
 
 
@@ -177,7 +182,13 @@ def _reset(mcp: McpContainer, rest: GrampsRest) -> None:
 def _write(root: Path, verdicts: list, driven: sweep.Sweep, runid: str) -> None:
     (root / "summary.md").write_text(
         report.summary(
-            verdicts, driven.graded, spent=driven.spent, budget=driven.max_spend_usd, stamp=runid
+            verdicts,
+            driven.graded,
+            spent=driven.spent,
+            budget=driven.max_spend_usd,
+            stamp=runid,
+            aborted=driven.aborted,
+            stopped=driven.stopped,
         ),
         encoding="utf-8",
     )

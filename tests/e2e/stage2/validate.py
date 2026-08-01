@@ -30,9 +30,8 @@ from .assertion_kinds import unknown_parameters as unknown_kind_parameters
 from .catalog import EVERYTHING, UseCase
 from .checks_record import ALTERNATE_KEYS
 from .leak_lint import leaks, stale, unwaived
-from .subjects import NEW, Tree, resolve_all
+from .subjects import NEW, PLACEHOLDER, Tree, resolve_all
 
-PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 # `I0000`, `F0021`, `S0003`: a Gramps id written into a use case is the defect T2.2 exists to
 # remove. It is not a property of the person — regrow the fixture, insert one subject in the
 # middle, import a file that renumbers a collision, and the literal now points at somebody

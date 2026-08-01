@@ -26,10 +26,17 @@ the answer it is supposed to be asking.
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from harness.docker_util import ProbeError
+
+# `{target}` in a prompt is filled with that subject's id at run time. uc26 asks for a record
+# *by* id, which makes it the one prompt that has to carry one — and an id is exactly what a
+# use case may not write down, so it has to be substituted from the tree the run starts on.
+PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 
 TERMS: dict[str, frozenset[str]] = {
     "people": frozenset({"first_name", "surname", "count"}),
@@ -143,6 +150,31 @@ def resolve_all(subjects: dict[str, dict[str, Any]], tree: Tree) -> dict[str, An
     if unresolved:
         raise ProbeError(f"{sorted(unresolved)} name no known namespace")
     return resolved
+
+
+def fill(prompt: str, resolved: Mapping[str, Any]) -> str:
+    """The prompt a model actually gets: every `{subject}` replaced by the id it resolved to."""
+    return PLACEHOLDER.sub(lambda found: _written(resolved, found), prompt)
+
+
+def unfilled(prompt: str) -> list[str]:
+    """Placeholders still standing in a prompt that is about to be sent.
+
+    Never a formality. `validate.py` checked that `{target}` named a declared subject and the
+    docstring said it was "filled at run time" — and **nothing filled it**. uc26 went to a real
+    model with a literal `{target}` in it; the model asked what that was supposed to mean and
+    called no tool, which from outside is indistinguishable from every gramps tool being
+    undiscoverable. The sweep aborted on evidence about itself, after paying for the run.
+    """
+    return sorted(set(PLACEHOLDER.findall(prompt)))
+
+
+def _written(resolved: Mapping[str, Any], found: re.Match[str]) -> str:
+    """A plural subject (`count: 7`) is written out as the list a person would say."""
+    value = resolved.get(found.group(1))
+    if value is None:
+        return found.group(0)
+    return ", ".join(str(item) for item in value) if isinstance(value, tuple) else str(value)
 
 
 def _matches(namespace: str, selector: dict[str, Any], record: dict[str, Any], known: dict) -> bool:
