@@ -22,10 +22,78 @@ distinction per tool.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from typing import Any
+
+from stage2.state import NAMESPACES as RECORD_NAMESPACES
 
 A = "A"
 B = "B"
+
+
+@dataclass(frozen=True)
+class Shape:
+    """What a parameter has to look like, and how to say so when it does not."""
+
+    reads: str
+    holds: Callable[[Any], bool]
+
+
+def _whole(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _signed(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+# The forms a parameter may take. Named shapes rather than positional ones, everywhere: a
+# two-element list is silently reversible, and a reversed `replaces` makes a **correct** edit
+# red. A false red is the one outcome a suite that files public issues may not produce.
+SHAPES: dict[str, Shape] = {
+    "subject": Shape("the name of a declared subject", lambda v: isinstance(v, str) and bool(v)),
+    "subject?": Shape(
+        "a declared subject's name, or null for 'nobody'",
+        lambda v: v is None or (isinstance(v, str) and bool(v)),
+    ),
+    "subjects": Shape(
+        "a list of declared subject names",
+        lambda v: isinstance(v, list) and all(isinstance(n, str) and n for n in v),
+    ),
+    "text": Shape("a string", lambda v: isinstance(v, str)),
+    "texts": Shape(
+        "a list of strings",
+        lambda v: isinstance(v, list) and bool(v) and all(isinstance(n, str) for n in v),
+    ),
+    "whole": Shape("a whole number", _whole),
+    "flag": Shape("true or false", lambda v: isinstance(v, bool)),
+    "namespace": Shape(f"one of {list(RECORD_NAMESPACES)}", lambda v: v in RECORD_NAMESPACES),
+    "deltas": Shape(
+        "a mapping of namespace to a signed count",
+        lambda v: isinstance(v, dict) and all(_signed(n) for n in v.values()),
+    ),
+    "fields": Shape(
+        "a mapping of field name to the value it should hold",
+        lambda v: isinstance(v, dict) and bool(v) and all(isinstance(k, str) for k in v),
+    ),
+    "replacement": Shape(
+        "a mapping {from: …, to: …} — never a two-element list, which is silently reversible",
+        lambda v: isinstance(v, dict) and set(v) == {"from", "to"},
+    ),
+    "name_pairs": Shape(
+        "a list of {first_name: …, surname: …} mappings",
+        lambda v: (
+            isinstance(v, list)
+            and bool(v)
+            and all(isinstance(p, dict) and set(p) == {"first_name", "surname"} for p in v)
+        ),
+    ),
+    "matches": Shape(
+        "a list of non-empty mappings, each naming what an alternate must carry",
+        lambda v: isinstance(v, list) and bool(v) and all(isinstance(e, dict) and e for e in v),
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -36,6 +104,7 @@ class Kind:
     grade: str = A
     required: tuple[str, ...] = ()
     optional: tuple[str, ...] = field(default=())
+    shapes: Mapping[str, str] = field(default_factory=dict)
 
 
 KINDS: dict[str, Kind] = {
@@ -44,54 +113,74 @@ KINDS: dict[str, Kind] = {
         "per-namespace form T2.3 requires, because `add_person` also creates a tag and a "
         "birth event, so a whole-tree 'nothing else changed' is a false red",
         required=("deltas",),
+        shapes={"deltas": "deltas"},
     ),
     "created": Kind(
         "exactly this many objects appeared in the namespace, and (with `fields`) the one "
         "that appeared carries these values — a create is never proven by a count alone",
         required=("namespace", "count"),
         optional=("fields",),
+        shapes={"namespace": "namespace", "count": "whole", "fields": "fields"},
     ),
     "removed": Kind(
         "exactly these objects are gone and no others. The set, never the count: a delete "
         "that removes the wrong record moves the count by the same one",
         required=("namespace", "subjects"),
+        shapes={"namespace": "namespace", "subjects": "subjects"},
     ),
     "person": Kind(
         "named leaf values on one person's record, read back over REST — first_name, "
         "surname, gender, name_type",
         required=("subject", "fields"),
+        shapes={"subject": "subject", "fields": "fields"},
     ),
     "alternates": Kind(
         "a person's alternate names: how many there are, and which (surname, type) pairs are "
         "among them. `count` is what separates an added name from a swapped one",
         required=("subject",),
         optional=("count", "contains"),
+        shapes={"subject": "subject", "count": "whole", "contains": "matches"},
     ),
     "family": Kind(
         "who occupies a family's parent slots and who its children are, as subjects rather "
         "than handles",
         required=("subject",),
         optional=("father", "mother", "children"),
+        shapes={
+            "subject": "subject",
+            "father": "subject?",
+            "mother": "subject?",
+            "children": "subjects",
+        },
     ),
     "tag": Kind(
         "whether one named tag is on a person, and whether the tag object itself survives",
         required=("subject", "tag", "present"),
         optional=("tag_survives",),
+        shapes={
+            "subject": "subject",
+            "tag": "text",
+            "present": "flag",
+            "tag_survives": "flag",
+        },
     ),
     "note_body": Kind(
         "the text of a source's body note: unchanged but for one declared replacement "
         "(uc17's byte-preserving edit), or merely long enough to be prose",
         required=("subject",),
         optional=("replaces", "min_length"),
+        shapes={"subject": "subject", "replaces": "replacement", "min_length": "whole"},
     ),
     "source": Kind(
         "named leaf values on one source record — the exact title a prompt asked for",
         required=("subject", "fields"),
+        shapes={"subject": "subject", "fields": "fields"},
     ),
     "names_added": Kind(
         "which (first name, surname) pairs the call added. Names, not ids: an import may "
         "renumber a colliding gramps_id, so the id is not a handle a use case can hold",
         required=("pairs",),
+        shapes={"pairs": "name_pairs"},
     ),
     "tree_unchanged": Kind(
         "the whole tree is identical to before — the only class-A statement a read-only use "
@@ -106,12 +195,19 @@ KINDS: dict[str, Kind] = {
         "exists', which a leftover export from an earlier run satisfies for free",
         required=("count",),
         optional=("extension", "min_bytes", "contains"),
+        shapes={
+            "count": "whole",
+            "extension": "text",
+            "min_bytes": "whole",
+            "contains": "text",
+        },
     ),
     "tool_log": Kind(
         "which tools the model actually called. Advisory by construction: the tree cannot "
         "tell a `list_people` from a `get_person`, so this may never fail a run",
         grade=B,
         required=("used_any",),
+        shapes={"used_any": "texts"},
     ),
 }
 
@@ -133,3 +229,36 @@ def unknown_parameters(kind_name: str, given: set[str]) -> set[str]:
 def missing_parameters(kind_name: str, given: set[str]) -> set[str]:
     """Parameters this kind requires and the use case did not supply."""
     return set(KINDS[kind_name].required) - given
+
+
+def wrong_shapes(kind_name: str, params: Mapping[str, Any]) -> list[str]:
+    """Parameters written in a form the check that reads them does not accept.
+
+    This is the gap that cost three live sweeps. `required`/`optional` answer whether a
+    parameter is *there*; nothing answered what it *was*. The catalog wrote
+    `replaces: ['1912', '1913']` and `pairs: [[Jakob, Vollmarsen]]` while the graders read
+    `{from:, to:}` and `{first_name:, surname:}` — every one of those loaded, validated, and
+    then died mid-sweep, after the model run it was grading had already been paid for.
+    """
+    shapes = KINDS[kind_name].shapes
+    found = []
+    for name, value in params.items():
+        shape = SHAPES.get(shapes.get(name, ""))
+        if shape is None or shape.holds(value):
+            continue
+        found.append(f"writes {name}={value!r}, but this kind reads {name} as {shape.reads}")
+    return found
+
+
+def shapeless_parameters() -> set[str]:
+    """`kind.parameter` pairs a kind knows and no shape describes.
+
+    A parameter added without a form is a parameter nothing checks — which is exactly how the
+    three that died mid-sweep got in. Held by a test, so the registry cannot grow another.
+    """
+    return {
+        f"{name}.{parameter}"
+        for name, kind in KINDS.items()
+        for parameter in (*kind.required, *kind.optional)
+        if kind.shapes.get(parameter) not in SHAPES
+    }

@@ -12,12 +12,15 @@ would be a grader that agrees with itself.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from stage2.state import NAMESPACES, State
 
 FEMALE, MALE = 0, 1
 BIRTH_NAME, MARRIED_NAME = "Birth Name", "Married Name"
+# The two tag objects the committed fixture holds, read off `synthetic-tree.gramps`.
+PROVISIONAL, BLOG = "Unbestätigt", "Blog"
 
 
 def person(
@@ -89,3 +92,70 @@ def state(**namespaces: tuple[dict[str, Any], ...]) -> State:
         counts={name: len(values) for name, values in records.items()},
         records=records,
     )
+
+
+def from_cast(cast: Any) -> State:
+    """The committed fixture as a capture — the tree every Stage-2 run is reset to.
+
+    Built from `cast.py` rather than from a live instance, so the catalog's assertions can be
+    put through their checks for nothing. What it is **not** is a claim about outcomes:
+    `cast.py` records ids, names, sexes and article bodies and is silent about which person
+    carries which tag, so the tag distribution below follows the fixture's own rule
+    (`add_person` creates `Unbestätigt` on first use) rather than a measurement.
+    """
+    gender = {entry["gramps_id"]: entry.get("gender", FEMALE) for entry in cast.PEOPLE}
+    households: dict[str, list[str]] = {}
+    for entry in cast.FAMILIES:
+        for member in (entry["spouse_a"], entry["spouse_b"], *entry["children"]):
+            if member:
+                households.setdefault(str(member), []).append(f"h-{entry['gramps_id']}")
+
+    return state(
+        people=tuple(
+            person(
+                entry["gramps_id"],
+                entry["first_name"],
+                entry["surname"],
+                gender=entry.get("gender", FEMALE),
+                name_type=entry.get("name_type", BIRTH_NAME),
+                alternates=tuple(
+                    (str(alternate["surname"]), str(alternate.get("name_type", BIRTH_NAME)))
+                    for alternate in entry.get("alternate_names", ())
+                ),
+                tags=(PROVISIONAL,),
+                families=tuple(households.get(str(entry["gramps_id"]), ())),
+            )
+            for entry in cast.PEOPLE
+        ),
+        families=tuple(
+            family(
+                entry["gramps_id"],
+                father=_slot(entry, gender, MALE),
+                mother=_slot(entry, gender, FEMALE),
+                children=tuple(entry["children"]),
+            )
+            for entry in cast.FAMILIES
+        ),
+        sources=tuple(
+            source(entry["gramps_id"], entry["title"], notes=(f"N{index:04d}",))
+            for index, entry in enumerate(cast.SOURCES)
+        ),
+        notes=tuple(
+            note(f"N{index:04d}", entry["body"]) for index, entry in enumerate(cast.SOURCES)
+        ),
+        tags=(tag(PROVISIONAL), tag(BLOG)),
+    )
+
+
+def _slot(entry: Mapping[str, Any], gender: Mapping[str, int], wanted: int) -> str:
+    """Which spouse sits in which parent slot.
+
+    `cast.py` says `spouse_a`/`spouse_b` and deliberately not father/mother — which slot a
+    person lands in is the product's own rule (female becomes the mother) and several use
+    cases exist to test it. Applying that rule here is what puts a `family` assertion through
+    the same branch it will meet live.
+    """
+    for spouse in (entry["spouse_a"], entry["spouse_b"]):
+        if spouse and gender.get(str(spouse)) == wanted:
+            return str(spouse)
+    return ""

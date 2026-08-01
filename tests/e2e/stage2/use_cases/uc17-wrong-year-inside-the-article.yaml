@@ -21,7 +21,7 @@ assertions:
   - id: uc17/the-body-came-back-byte-for-byte-but-the-year
     kind: note_body
     subject: article
-    replaces: ['1912', '1913']
+    replaces: {from: '1912', to: '1913'}
   - id: uc17/the-article-itself-was-not-rewritten
     kind: source
     subject: article

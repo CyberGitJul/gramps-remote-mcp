@@ -171,6 +171,11 @@ def note_body(params: Params, evidence: Any) -> str | None:
     `replaces` is byte-preserving on purpose (uc17): everything but the one declared correction
     has to come back identical, which is what distinguishes an edit from a rewrite. A model that
     "helpfully" reflows the article fails here, and should.
+
+    It is `{from:, to:}` and never a two-element list, because the list form is silently
+    reversible: `['1913', '1912']` finds nothing to replace, so `wanted` is the untouched
+    original and a **correct** edit reds. A false red is the one outcome this suite may not
+    produce — the catalog's shape contract is what holds the form now.
     """
     gramps_id = evidence.ids(params["subject"])
     before_text = _note_text(evidence.before, gramps_id)
@@ -182,7 +187,8 @@ def note_body(params: Params, evidence: Any) -> str | None:
     if "replaces" in params:
         if before_text is None:
             return f"sources/{gramps_id} had no body note before the call to correct"
-        wanted = before_text.replace(str(params["replaces"]["from"]), str(params["replaces"]["to"]))
+        wrong, right = params["replaces"]["from"], params["replaces"]["to"]
+        wanted = before_text.replace(str(wrong), str(right))
         if after_text != wanted:
             return (
                 "the note is not the original with exactly that one correction applied\n"

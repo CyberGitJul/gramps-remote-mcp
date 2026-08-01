@@ -18,4 +18,7 @@ assertions:
     deltas: {people: 3, families: 1, tags: 1}
   - id: uc19/his-three-people-arrived
     kind: names_added
-    pairs: [[Jakob, Vollmarsen], [Sophie, Vollmarsen], [Lena, Vollmarsen]]
+    pairs:
+      - {first_name: Jakob, surname: Vollmarsen}
+      - {first_name: Sophie, surname: Vollmarsen}
+      - {first_name: Lena, surname: Vollmarsen}

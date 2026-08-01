@@ -24,7 +24,7 @@ from typing import Any
 
 from harness.docker_util import ProbeError
 
-from .assertion_kinds import KINDS, MANY_SUBJECTS, ONE_SUBJECT, missing_parameters
+from .assertion_kinds import KINDS, MANY_SUBJECTS, ONE_SUBJECT, missing_parameters, wrong_shapes
 from .assertion_kinds import A as GRADE_A
 from .assertion_kinds import unknown_parameters as unknown_kind_parameters
 from .catalog import EVERYTHING, UseCase
@@ -156,6 +156,10 @@ def _assertions(use_case: UseCase, seen: dict[str, str]) -> list[str]:
             found.append(f"{use_case.id}: {assertion.id} is missing {sorted(missing)}")
         if unknown:
             found.append(f"{use_case.id}: {assertion.id} passes {sorted(unknown)}, unknown here")
+        found += [
+            f"{use_case.id}: {assertion.id} {problem}"
+            for problem in wrong_shapes(assertion.kind, assertion.params)
+        ]
         found += _references(use_case, assertion.id, assertion.params, declared)
         found += _contains(use_case, assertion)
 
