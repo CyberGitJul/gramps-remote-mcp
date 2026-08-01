@@ -55,6 +55,15 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `test_04_mcp_container.py` | T1.5 acceptance: handshake, `off 27 / on 31`, reuse, verified removal |
 | `test_05_fixture.py` | T1.6 acceptance: the fixture imports and reads back exactly as built |
 | `test_07_cousins_import.py` | T2.3: the uc19 input lands the measured per-namespace delta, duplicate tag included |
+| `harness/tool_contract.py` | the contract read three ways — registry, wire, and `server.py` parsed (T3.1) |
+| `fixtures/expected_tools.json` | the committed snapshot: 31 tools, every description and both schemas |
+| `test_00_tool_contract.py` | T3.1 in-process: snapshot, gate, docstring attribution, README counts |
+| `test_08_protocol.py` | T3.1 live: the shipped image serves that same contract, and D20's refusal shape |
+| `test_01_env_wiring.py` | T3.2: missing variables, no backup dir, unroutable host, the fail-open gate probe |
+| `test_09_credentials_and_roles.py` | T3.2: the EDITOR profile (D12) and a password that is merely wrong |
+| `test_80_regressions.py` | T3.3: the cold-client 429 as a token *count*, and `IMPORT_MIN_SETTLE` |
+| `test_81_image_contract.py` | T3.3: the in-image import (D19) and the `mcp<2` pin, where it is installed |
+| `test_00_ci_legs.py` | T3.4: every module declares whether it needs an instance, both directions linted |
 
 Phase 0 created the probe and the harness skeleton; T1.1 added the gate, T1.2 the reaper, T1.3
 the restartable instance, T1.4 the oracle plus the token audit, T1.5 the container and T1.6 the
@@ -67,6 +76,20 @@ id** — subjects are selected from the tree by what a user would say about them
 and `coverage.py` are checked against each other in both directions, so a tool's slot and its
 use case cannot drift apart. The Docker-free half of all of this runs in CI (`lint.yml`), which
 is what keeps the lint from being a guard nobody executes.
+
+Phase 3 is the regression trio and the CI legs. T3.1 pins the tool contract — names,
+descriptions and both schemas — and reads it three ways that fail differently, which is what
+makes a Stage-2 finding attributable to `server.py` rather than to the framework. T3.2 covers
+the environment: a required variable missing, a backup directory absent, an unreachable
+instance, the destructive gate's fail-open probe and the EDITOR role. T3.3 is the two live
+regressions worth a nightly plus the image contract. T3.4 wires the legs.
+
+**One measurement from T3.1 is worth carrying:** Python 3.13 began dedenting docstrings at
+compile time and the image is `python:3.12-slim`, so the same tool arrives over the wire with
+its continuation lines indented and from a modern host without. All three readings are compared
+dedented — the text is pinned, its leading whitespace deliberately is not. Pinning raw bytes
+would have made the suite red on every machine whose interpreter differs from the image's,
+which is the harness accusing the product.
 
 ### The canonical fixture (D2)
 
@@ -116,8 +139,9 @@ hand, so a tag can move out from under a run in flight. The resolved id is what 
 
 ```bash
 pytest -q                       # unit suite only: 259 passed, e2e deselected, no Docker
-pytest -q -m e2e                # all 64 e2e tests, ~65 s (16 of them need Docker)
-pytest -q -m e2e tests/e2e/test_00_*.py tests/e2e/test_02_token_audit.py  # no Docker, ~2 s
+pytest -q -m e2e                # everything, including live Gramps Web instances
+pytest -q -m "e2e and not gramps"   # Docker but no services — the required CI leg, ~40 s
+pytest -q -m e2e -k test_00     # no Docker at all, ~4 s (also a step in the lint workflow)
 pytest --e2e-reap-only          # reap stale gwe2e-* resources, prune artifact dirs, exit
 pytest --e2e-reap-only --e2e-force --e2e-keep-runs=1   # also remove a *running* instance
 
@@ -125,6 +149,21 @@ pytest --e2e-reap-only --e2e-force --e2e-keep-runs=1   # also remove a *running*
 .venv/bin/python tests/e2e/probes/probe_bringup.py --json --verbose    # echo every record
 .venv/bin/python tests/e2e/probes/probe_bringup.py --keep --verbose    # leave the instance up
 ```
+
+### Three legs, and which is required
+
+`image-contract` in `.github/workflows/e2e.yml` runs `-m "e2e and not gramps"` and is
+**required**: Docker only, no Gramps Web, no Redis, no credentials, no secrets — so nothing in
+it can be red for a reason that is not a defect. `stage1` runs the whole suite against live
+instances and is **advisory** until 20 consecutive runs have failed only for genuine reasons;
+the promotion rule is written into the workflow so it cannot stay advisory by inertia.
+
+Which leg a module belongs to is **declared, not inferred**: the seven modules that bring up an
+instance carry `pytestmark = pytest.mark.gramps`, and `test_00_ci_legs.py` lints both
+directions. The forgotten marker drags a bring-up into the services-free job; the needless one
+is worse, because a module quietly excluded from the required leg looks exactly like one that
+passes. `test_00_*` is exempt by the convention above — those modules are Docker-free, and
+`test_00_teardown.py` mentions `GrampsInstance` precisely because it patches the bring-up away.
 
 The gate has two independent halves, because either alone is one edit away from being
 useless: `addopts = "-m 'not e2e'"` in `pyproject.toml` deselects, and `conftest.py` stamps the
