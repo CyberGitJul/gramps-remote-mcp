@@ -67,6 +67,7 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `test_00_refusal_marker.py` | T4.0: `@pytest.mark.refusal` proves a refusal, and is used consistently once used |
 | `test_00_content_digest.py` | T4.0: the content digest sees the field writes the identity one is built not to |
 | `test_00_chain.py` | T4.0: which failure breaks an ordered chain, and what the skip line says |
+| `test_00_fixture_xml.py` | T4.5: the committed XML holds the cast's families, and no name contains another |
 | `test_10_seeded_tree.py` | T4.0 acceptance: a class dirties the tree, the next one gets it back — and the seeder had to work for it |
 
 Phase 0 created the probe and the harness skeleton; T1.1 added the gate, T1.2 the reaper, T1.3
