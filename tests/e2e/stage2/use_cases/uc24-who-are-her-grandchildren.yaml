@@ -1,0 +1,17 @@
+# uc24 — advisory. "grandchildren" is two generations, which is `grade=2`; the tree cannot say
+# whether that came from one `get_descendants` or two chained `get_relations`.
+id: uc24
+tier: 3
+primary: [gramps_get_descendants]
+prompt: >-
+  Bertram Bernwald — does the tree have any of his grandchildren in it? Names only, please.
+subjects:
+  forebear: {namespace: people, first_name: Bertram, surname: Bernwald}
+guards: {people: [], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc24/nothing-was-written
+    kind: tree_unchanged
+  - id: uc24/a-descent-query-answered-it
+    kind: tool_log
+    used_any: [gramps_get_descendants, gramps_get_relations]

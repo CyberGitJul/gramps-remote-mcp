@@ -34,19 +34,39 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `stubs/fake_tree.py` | an in-memory tree and a server that can be told to misreport |
 | `stubs/fake_identity.py` | …and to move identity while every count agrees (B1) |
 | `stubs/fake_write_shapes.py` | …and to write while reporting nothing about it (B5, B6) |
-| `fixtures/synthetic-tree.gramps` | the canonical tree (D2): 42 people, 21 families, 21 sources, plain XML |
-| `fixtures/cast.py` | every id and the observed counts — **no test body may carry an id literal** |
-| `fixtures/build_fixture.py` | regrows the tree with the server's own tools; run rarely |
+| `stage2/coverage.py` | which use case each of the 31 tools is tested by, and what a red there licenses (T2.1) |
+| `stage2/catalog.py` | one file per use case, loaded as data — shape only, never judgement (T2.2) |
+| `stage2/use_cases/ucNN-*.yaml` | the 27 use cases: prompt, tools, subjects, assertions, maxdrop, tier |
+| `stage2/assertion_kinds.py` | the vocabulary a use case may assert in, and what each kind proves |
+| `stage2/subjects.py` | who a use case is about, selected from the tree — **never by id** (T2.2) |
+| `stage2/validate.py` | whether a loaded use case would measure anything at all |
+| `stage2/leak_lint.py` | no prompt may name the tool it expects (T2.7) — runs in `lint.yml` |
+| `fixtures/synthetic-tree.gramps` | the canonical tree (D2): 56 people, 22 families, 23 sources, plain XML |
+| `fixtures/cousins-branch.gramps` | the uc19 import input: three people and one family, grown by the same build |
+| `fixtures/cast.py` | every id, the observed counts and two measurements — **no test body may carry an id literal** |
+| `fixtures/build_fixture.py` | regrows both files with the server's own tools; run rarely |
+| `fixtures/builder.py` | the growing itself: one method per tool, remembering every id it is handed |
+| `fixtures/stage2_subjects.py` | the affordances a well-formed tree cannot supply, one block per use case |
+| `fixtures/emit.py` | writes `cast.py` and the D17 manifest out of a finished build |
 | `conftest.py` | stamps the `e2e` marker (D1); resolves the image; fails the run on a leak |
 | `test_00_*.py`, `test_02_token_audit.py` | Docker-free: gate, reaper guards, teardown bookkeeping, framing, image legs, log parser |
 | `test_01_instance.py` | T1.3 acceptance: two bring-ups, nothing left behind, INT untouched |
 | `test_03_rest_oracle.py` | T1.4: snapshot/fingerprint, and `put_merge` preserving what it does not touch |
 | `test_04_mcp_container.py` | T1.5 acceptance: handshake, `off 27 / on 31`, reuse, verified removal |
 | `test_05_fixture.py` | T1.6 acceptance: the fixture imports and reads back exactly as built |
+| `test_07_cousins_import.py` | T2.3: the uc19 input lands the measured per-namespace delta, duplicate tag included |
 
 Phase 0 created the probe and the harness skeleton; T1.1 added the gate, T1.2 the reaper, T1.3
 the restartable instance, T1.4 the oracle plus the token audit, T1.5 the container and T1.6 the
 canonical fixture. The reset and `assertions.py` are the rest of Phase 1.
+
+Phase 2 is the real-AI stage. T2.1 mapped all 31 tools to a use case; T2.2/T2.3 grew the fixture
+for the subjects those use cases need and wrote the catalog itself; T2.7 is the leak lint. Two
+things about the catalog are worth knowing before editing it: **no file may contain a Gramps
+id** — subjects are selected from the tree by what a user would say about them — and the catalog
+and `coverage.py` are checked against each other in both directions, so a tool's slot and its
+use case cannot drift apart. The Docker-free half of all of this runs in CI (`lint.yml`), which
+is what keeps the lint from being a guard nobody executes.
 
 ### The canonical fixture (D2)
 

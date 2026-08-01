@@ -33,3 +33,10 @@ jobs:
         run: pip install -r requirements-dev.txt
       - name: Run test suite
         run: pytest -q
+
+      # The Docker-free half of the e2e suite: the harness's own guards plus the Stage-2
+      # catalog and its leak lint. `pytest -q` deselects everything marked `e2e`, so without
+      # this step these guards run in no job at all — and a leak lint nobody runs is exactly
+      # the silence it exists to prevent. No Docker, no Gramps Web, no LLM, ~3 seconds.
+      - name: Docker-free e2e guards
+        run: pytest tests/e2e -m e2e -k test_00 -q

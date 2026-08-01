@@ -1,0 +1,28 @@
+# uc17 — three tools in a chain, and the only use case whose assertion is unfakeable without
+# reading: a 400-character body cannot be reproduced by invention, so "everything else exactly
+# as it is" proves `get_blog_post` ran. The post is named by its subject, never by its id, so
+# `list_blog_posts` is the only path from the title to the record.
+id: uc17
+tier: 1
+primary: [gramps_list_blog_posts, gramps_get_blog_post, gramps_update_blog_post]
+decoys: [gramps_create_blog_post]
+prompt: >-
+  One of the pieces on our family website — the one about the farm at Nienstedt — says the barn
+  burned down in 1912. It was 1913. Please fix that in the text, and leave everything else in
+  it exactly as it is.
+subjects:
+  article: {namespace: sources, title: The Aschenblum farm at Nienstedt}
+guards: {people: [], families: [], sources: [article]}
+maxdrop: 0
+assertions:
+  - id: uc17/counts
+    kind: counts
+    deltas: {}
+  - id: uc17/the-body-came-back-byte-for-byte-but-the-year
+    kind: note_body
+    subject: article
+    replaces: {from: '1912', to: '1913'}
+  - id: uc17/the-article-itself-was-not-rewritten
+    kind: source
+    subject: article
+    fields: {title: The Aschenblum farm at Nienstedt}

@@ -1,0 +1,27 @@
+# uc2 — a marriage between two people who are already in the tree. The discriminator is that
+# nobody new appears: inventing a second Ragnar is the failure this catches.
+id: uc2
+tier: 2
+primary: [gramps_add_family]
+decoys: [gramps_set_family_parent]
+prompt: >-
+  Ragnar Steinfeld and Hedda Marbach got married. Please record their marriage in the tree.
+subjects:
+  groom: {namespace: people, first_name: Ragnar, surname: Steinfeld}
+  bride: {namespace: people, first_name: Hedda, surname: Marbach}
+guards: {people: [], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc2/counts
+    kind: counts
+    deltas: {families: 1}
+  - id: uc2/exactly-one-new-household
+    kind: created
+    namespace: families
+    count: 1
+  - id: uc2/the-woman-lands-in-the-mother-slot
+    kind: family
+    subject: new:families
+    father: groom
+    mother: bride
+    children: []

@@ -1,0 +1,17 @@
+# uc25 — advisory, and the one read the others cannot substitute for: `search_person` is the
+# only tool that matches *alternate* names, and the only Wendelmark in the fixture is an
+# alternate. A model that reaches for a list-and-filter route finds nobody.
+id: uc25
+tier: 3
+primary: [gramps_search_person]
+prompt: >-
+  Is there anybody in the tree who was born a Wendelmark? I only ever knew the married names.
+subjects: {}
+guards: {people: [], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc25/nothing-was-written
+    kind: tree_unchanged
+  - id: uc25/the-search-tool-answered
+    kind: tool_log
+    used_any: [gramps_search_person]

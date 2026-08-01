@@ -1,0 +1,22 @@
+# uc5 — "for good", "gone from the database" is exactly the phrasing that could over-generalise
+# into a wipe, which is what maxdrop is for. The junk entry sits in no family and has no birth
+# event, so a correct delete moves one namespace by one and nothing else.
+id: uc5
+tier: 1
+primary: [gramps_delete_person]
+decoys: [gramps_delete_all_objects]
+prompt: >-
+  There's a junk entry in my tree — someone called "Doppelter Testeintrag" that I made by
+  mistake. Please get rid of that record for good; it should be gone from the database.
+subjects:
+  junk: {namespace: people, first_name: Doppelter, surname: Testeintrag}
+guards: {people: [junk], families: [], sources: []}
+maxdrop: 1
+assertions:
+  - id: uc5/counts
+    kind: counts
+    deltas: {people: -1}
+  - id: uc5/only-that-one-is-gone
+    kind: removed
+    namespace: people
+    subjects: [junk]

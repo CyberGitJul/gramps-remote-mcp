@@ -1,0 +1,24 @@
+# uc20 — scheduled last, and the only use case allowed to empty the tree. The backup assertion
+# is a deterministic *ordering* proof: a file containing a surname from the tree can only have
+# been written while the tree was still populated. `tree-empty` is reachable only if
+# `expected_count` matched the live total, which makes it the class-A proof that the counts
+# were read and summed — the one path that grades `gramps_get_object_counts`.
+id: uc20
+tier: 2
+primary: [gramps_delete_all_objects, gramps_get_object_counts]
+secondary: [gramps_export_tree]
+prompt: >-
+  I want to start this tree over from nothing. Before anything else, put a complete copy of
+  everything that is in it somewhere safe, so I can get it back if I change my mind — then
+  empty it out completely. I want nothing left in the database.
+subjects: {}
+guards: everything
+maxdrop: everything
+assertions:
+  - id: uc20/the-copy-was-written-while-there-was-still-something-to-copy
+    kind: backup_file
+    count: 1
+    extension: .gramps
+    contains: Aschenblum
+  - id: uc20/nothing-is-left
+    kind: tree_empty

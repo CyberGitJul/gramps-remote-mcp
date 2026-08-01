@@ -1,0 +1,22 @@
+# uc21 — seven single calls converge on the same tree as one bulk call, so the *outcome* gates
+# and the tool identity does not. The datum this use case exists to collect is class B: the
+# design predicts the bulk docstrings out-retrieve the singles even for single-person work,
+# and this is where the opposite case is measured.
+id: uc21
+tier: 2
+primary: [gramps_set_surname_bulk]
+prompt: >-
+  The registry office confirmed the spelling: every single Aschenblum in my tree should be
+  "Aschenbluhm" with an h. Please straighten the whole lot of them out — there are seven.
+subjects:
+  the_aschenblums: {namespace: people, surname: Aschenblum, count: 7}
+guards: {people: [the_aschenblums], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc21/counts
+    kind: counts
+    deltas: {}
+  - id: uc21/every-one-of-them-is-respelled
+    kind: person
+    subject: the_aschenblums
+    fields: {surname: Aschenbluhm}

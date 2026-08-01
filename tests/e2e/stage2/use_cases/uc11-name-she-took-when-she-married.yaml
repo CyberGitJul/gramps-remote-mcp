@@ -1,0 +1,29 @@
+# uc11 — the clean primary for `add_alternate_name`: `add_birth_name` cannot produce a
+# non-Birth type, and `set_surname` would move the primary. The type is a parameter *value*,
+# so the prompt has to express it — "the name she took by marriage" is as close as English
+# gets without naming the tool.
+id: uc11
+tier: 2
+primary: [gramps_add_alternate_name]
+decoys: [gramps_set_surname]
+prompt: >-
+  Frauke Ivarsgard was born an Ivarsgard and that is how she should stay in the tree, but after
+  the wedding everyone called her Bernwald. Her record should show that second one too, marked
+  as the name she took by marriage.
+subjects:
+  target: {namespace: people, first_name: Frauke, surname: Ivarsgard}
+guards: {people: [target], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc11/maiden-name-stays-primary
+    kind: person
+    subject: target
+    fields: {surname: Ivarsgard}
+  - id: uc11/exactly-one-married-name-added
+    kind: alternates
+    subject: target
+    count: 1
+    contains: [{surname: Bernwald, name_type: Married Name}]
+  - id: uc11/counts
+    kind: counts
+    deltas: {}

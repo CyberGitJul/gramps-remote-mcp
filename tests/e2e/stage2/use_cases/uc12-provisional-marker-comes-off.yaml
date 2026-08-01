@@ -1,0 +1,24 @@
+# uc12 — the highest-risk retrieval case in the suite and the design's headline prediction:
+# `confirm_person`'s only distinctive token is an untranslated German tag name no English
+# speaker would type, and "confirmed" is not "verified". Predicted failure shape: the model
+# reads the person, sees opaque tag handles, and reports that no tool exists for this.
+id: uc12
+tier: 1
+primary: [gramps_confirm_person]
+prompt: >-
+  I have now checked Elvide Grausteen against the parish register and the entry is solid. Her
+  record is still flagged as not yet verified — that flag can come off now.
+subjects:
+  target: {namespace: people, first_name: Elvide, surname: Grausteen}
+guards: {people: [target], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc12/the-flag-is-off-her
+    kind: tag
+    subject: target
+    tag: Unbestätigt
+    present: false
+    tag_survives: true
+  - id: uc12/counts
+    kind: counts
+    deltas: {}

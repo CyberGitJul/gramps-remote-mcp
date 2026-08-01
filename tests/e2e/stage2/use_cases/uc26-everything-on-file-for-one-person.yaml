@@ -1,0 +1,19 @@
+# uc26 — advisory, and the easiest of the seven one-line docstrings: it is the only one that
+# mentions a Gramps ID, so the query the prompt produces is nearly verbatim. The id is filled
+# in from the resolved subject at run time — the one prompt that has to carry one.
+id: uc26
+tier: 3
+primary: [gramps_get_person]
+prompt: >-
+  Give me everything the tree has on record for the person with the ID {target} — the whole
+  entry as it is stored, not a summary.
+subjects:
+  target: {namespace: people, first_name: Bertram, surname: Bernwald}
+guards: {people: [], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc26/nothing-was-written
+    kind: tree_unchanged
+  - id: uc26/the-single-record-read-answered
+    kind: tool_log
+    used_any: [gramps_get_person]

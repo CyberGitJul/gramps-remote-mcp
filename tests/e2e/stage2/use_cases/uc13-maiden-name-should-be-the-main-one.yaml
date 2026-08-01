@@ -1,0 +1,29 @@
+# uc13 — a swap is a permutation, so the sharpest assertion in the suite is that nothing grew:
+# the tempting route (set the surname, then add the old one as an alternate) leaves a second
+# alternate behind and fails on the count. The primary's *type* moving with it is what proves
+# whole Name records were exchanged rather than surnames copied.
+id: uc13
+tier: 1
+primary: [gramps_swap_primary_name]
+decoys: [gramps_set_surname, gramps_add_alternate_name]
+prompt: >-
+  In the family we always knew my great-grandmother as Rosalind Wendelmark, not by her
+  husband's name. Both spellings are already in her record — please turn it around, so the one
+  she was born with is the one that shows at the top, and her husband's name stays on record.
+subjects:
+  target: {namespace: people, first_name: Rosalind, surname: Steinbrecht}
+guards: {people: [target], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc13/birth-name-is-now-primary
+    kind: person
+    subject: target
+    fields: {surname: Wendelmark, name_type: Birth Name}
+  - id: uc13/exactly-one-alternate-and-it-is-the-married-one
+    kind: alternates
+    subject: target
+    count: 1
+    contains: [{surname: Steinbrecht, name_type: Married Name}]
+  - id: uc13/counts
+    kind: counts
+    deltas: {}

@@ -1,0 +1,21 @@
+# uc7 — the prompt avoids "backup", "file", "export" and "tree": `gramps_export_tree` owns
+# three of those four words, and a prompt containing them would test the word, not the
+# docstring. What is left is what a user actually says.
+id: uc7
+tier: 2
+primary: [gramps_export_tree]
+prompt: >-
+  I'd like a copy of everything I have in here, put away somewhere safe — one single piece, in
+  case something goes wrong.
+subjects: {}
+guards: {people: [], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc7/counts
+    kind: counts
+    deltas: {}
+  - id: uc7/one-file-appeared-during-this-call
+    kind: backup_file
+    count: 1
+    extension: .gramps
+    min_bytes: 1000

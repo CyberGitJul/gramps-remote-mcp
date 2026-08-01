@@ -1,0 +1,26 @@
+# uc10 — one word in the given name, with the surname explicitly correct. `set_surname` and
+# `set_first_name` differ by one word inside otherwise identical one-line docstrings; the
+# surname assertion is what catches the wrong one of the pair.
+id: uc10
+tier: 2
+primary: [gramps_set_first_name]
+decoys: [gramps_set_surname, gramps_add_alternate_name, gramps_swap_primary_name]
+prompt: >-
+  There is a "Detlef Wiesenkamp" in the tree. The baptism register says he was christened
+  Detlev — Wiesenkamp is right, only that one word is wrong in his record.
+subjects:
+  target: {namespace: people, first_name: Detlef, surname: Wiesenkamp}
+guards: {people: [target], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc10/given-name-fixed
+    kind: person
+    subject: target
+    fields: {first_name: Detlev, surname: Wiesenkamp}
+  - id: uc10/counts
+    kind: counts
+    deltas: {}
+  - id: uc10/nothing-was-added-alongside
+    kind: alternates
+    subject: target
+    count: 0

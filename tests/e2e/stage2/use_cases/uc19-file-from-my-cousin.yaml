@@ -1,0 +1,24 @@
+# uc19 — the per-namespace delta is measured, not assumed: the imported people carry the
+# `Unbestätigt` tag they were created with and Gramps keeps a *second* tag object of that name.
+# A naive "tags frozen" would be a false red on a correct import (see test_07). Assert on
+# names, never on ids: an import may renumber a colliding gramps_id.
+id: uc19
+tier: 2
+primary: [gramps_import_file]
+prompt: >-
+  A cousin sent me his part of the family and I dropped it into the server's backup folder — it
+  is called cousins-branch.gramps. Please pull those people into my tree; nothing that is
+  already in there should change.
+subjects: {}
+guards: {people: [], families: [], sources: []}
+maxdrop: 0
+assertions:
+  - id: uc19/counts
+    kind: counts
+    deltas: {people: 3, families: 1, tags: 1}
+  - id: uc19/his-three-people-arrived
+    kind: names_added
+    pairs:
+      - {first_name: Jakob, surname: Vollmarsen}
+      - {first_name: Sophie, surname: Vollmarsen}
+      - {first_name: Lena, surname: Vollmarsen}

@@ -27,7 +27,9 @@ from harness.rest import GrampsRest
 from harness.runid import new_runid
 
 TREE_FILE = Path(__file__).parent / "fixtures" / "synthetic-tree.gramps"
+COUSINS_FILE = Path(__file__).parent / "fixtures" / cast.COUSINS["filename"]
 PAGESIZE = 20
+UNKNOWN_SEX = 2
 
 
 @pytest.fixture(scope="module")
@@ -71,13 +73,14 @@ def imported(
         assert mcp.close() == [], "the MCP container outlived its test"
 
 
-def test_the_fixture_is_plain_xml() -> None:
+def test_both_committed_inputs_are_plain_xml() -> None:
     """A gzipped export is not diff-stable — its wrapper carries a UUID, so a rebuild would
     show a wall of changed bytes whether or not the tree changed."""
-    head = TREE_FILE.read_bytes()[:64]
+    for path in (TREE_FILE, COUSINS_FILE):
+        head = path.read_bytes()[:64]
 
-    assert head[:2] != b"\x1f\x8b", "still gzipped"
-    assert head.startswith(b"<?xml")
+        assert head[:2] != b"\x1f\x8b", f"{path.name} is still gzipped"
+        assert head.startswith(b"<?xml"), path.name
 
 
 def test_every_namespace_is_larger_than_one_page() -> None:
@@ -141,7 +144,7 @@ def test_every_family_reads_back_with_the_members_the_cast_records(imported: Gra
         }
         children = {person_id.get(ref["ref"]) for ref in family["child_ref_list"]}
 
-        assert parents == {expected["spouse_a"], expected["spouse_b"]}
+        assert parents == {expected["spouse_a"], expected["spouse_b"]} - {None}
         assert children == set(expected["children"])
 
 
@@ -152,6 +155,58 @@ def test_the_families_carry_their_children(imported: GrampsRest) -> None:
 
     assert len(with_children) == len([f for f in cast.FAMILIES if f["children"]])
     assert with_children, "no family has a child"
+
+
+def test_the_household_missing_a_parent_reads_back_missing_it(imported: GrampsRest) -> None:
+    """uc14 asks the model to put a father on record, and its whole discriminating power is
+    that `set_family_parent` fills an *existing* empty slot while `add_family` would build a
+    second household beside it. With both slots filled in the fixture there is nothing to fill.
+
+    That the surviving parent lands in the mother slot is the product's documented rule for a
+    single female spouse (`server.py:134-141`), so it is asserted rather than assumed."""
+    declared = [family for family in cast.FAMILIES if family["spouse_b"] is None]
+    assert len(declared) == 1, "the fixture no longer holds exactly one one-parent household"
+    families = {family["gramps_id"]: family for family in imported.families()}
+    household = families[str(declared[0]["gramps_id"])]
+
+    assert household["mother_handle"], "the single spouse is not in the mother slot"
+    assert not household["father_handle"], "the slot uc14 exists to fill is already taken"
+
+
+def test_the_census_five_are_the_only_records_without_a_sex(imported: GrampsRest) -> None:
+    """uc22 turns `2=Unknown` into three females and two males through one bulk call. If
+    anybody else were Unknown, "nobody else moved" would stop being decidable."""
+    declared = {p["gramps_id"] for p in cast.PEOPLE if p["gender"] == UNKNOWN_SEX}
+    landed = {p["gramps_id"] for p in imported.people() if p["gender"] == UNKNOWN_SEX}
+
+    assert landed == declared
+    assert len(landed) == 5
+
+
+def test_the_name_history_reads_back_as_plain_strings(imported: GrampsRest) -> None:
+    """The Stage-2 design left this open (`[U]` #1) and uc13 — the sharpest assertion in the
+    suite — depends on the answer: the client *writes* a bare string
+    (`gramps_client.py:269`), and if the API normalised it into a `NameType` object every
+    assertion about `Married Name` would have to go through that shape instead. Measured at
+    build time into `cast.NAME_TYPES`; pinned here so a server upgrade that starts
+    normalising is a red test rather than a silently rewritten use case."""
+    declared = next(p for p in cast.PEOPLE if p["gramps_id"] == cast.NAME_TYPES["gramps_id"])
+    person = imported.person(str(declared["gramps_id"]))
+    alternate = person["alternate_names"][0]
+
+    assert person["primary_name"]["type"] == cast.NAME_TYPES["primary"] == declared["name_type"]
+    assert alternate["type"] == declared["alternate_names"][0]["name_type"]
+    assert alternate["surname_list"][0]["surname"] == declared["alternate_names"][0]["surname"]
+
+
+def test_exactly_one_note_carries_the_year_uc17_rewrites(imported: GrampsRest) -> None:
+    """uc17 asserts that the body came back byte-identical except `1912` → `1913`, which is
+    only unfakeable while `1912` appears once in the whole tree: a second occurrence would
+    make "the model edited the right article" undecidable from the tree alone."""
+    bodies = [(note.get("text") or {}).get("string", "") for note in imported.notes()]
+
+    assert sum(body.count("1912") for body in bodies) == 1
+    assert sum(body.count("1913") for body in bodies) == 0
 
 
 def test_both_tags_the_tools_create_are_already_seeded(imported: GrampsRest) -> None:

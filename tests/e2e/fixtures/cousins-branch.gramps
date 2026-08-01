@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE database PUBLIC "-//Gramps//DTD Gramps XML 1.7.2//EN"
+"http://gramps-project.org/xml/1.7.2/grampsxml.dtd">
+<database xmlns="http://gramps-project.org/xml/1.7.2/">
+  <header>
+    <created date="2000-01-01" version="6.0.8"/>
+    <researcher>
+    </researcher>
+  </header>
+  <tags>
+    <tag handle="_103d38b075e5165ec8ba857644f2" change="0" name="Unbestätigt" color="#000000000000" priority="0"/>
+  </tags>
+  <people>
+    <person handle="_103d38b07c8c49c9cd8808ad040" change="0" id="I0056">
+      <gender>M</gender>
+      <name type="Birth Name">
+        <first>Jakob</first>
+        <surname>Vollmarsen</surname>
+      </name>
+      <parentin hlink="_103d38b09b3f45455302699d4207"/>
+      <tagref hlink="_103d38b075e5165ec8ba857644f2"/>
+    </person>
+    <person handle="_103d38b08739401902555a93b66c" change="0" id="I0057">
+      <gender>F</gender>
+      <name type="Birth Name">
+        <first>Sophie</first>
+        <surname>Vollmarsen</surname>
+      </name>
+      <parentin hlink="_103d38b09b3f45455302699d4207"/>
+      <tagref hlink="_103d38b075e5165ec8ba857644f2"/>
+    </person>
+    <person handle="_103d38b0916539da89c8ed809eee" change="0" id="I0058">
+      <gender>F</gender>
+      <name type="Birth Name">
+        <first>Lena</first>
+        <surname>Vollmarsen</surname>
+      </name>
+      <childof hlink="_103d38b09b3f45455302699d4207"/>
+      <tagref hlink="_103d38b075e5165ec8ba857644f2"/>
+    </person>
+  </people>
+  <families>
+    <family handle="_103d38b09b3f45455302699d4207" change="0" id="F0022">
+      <rel type="Unknown"/>
+      <father hlink="_103d38b07c8c49c9cd8808ad040"/>
+      <mother hlink="_103d38b08739401902555a93b66c"/>
+      <childref hlink="_103d38b0916539da89c8ed809eee"/>
+    </family>
+  </families>
+</database>

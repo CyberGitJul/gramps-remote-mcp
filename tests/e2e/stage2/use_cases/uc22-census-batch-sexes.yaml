@@ -1,0 +1,45 @@
+# uc22 — the sharpest enum test in the suite: three of the five must come out female, and the
+# mapping exists only in the docstring. Five people in one prompt is also the shape that makes
+# a per-item bulk call the natural route.
+id: uc22
+tier: 1
+primary: [gramps_set_gender_bulk]
+prompt: >-
+  The five Nordhagens I typed in from the 1900 census went in without a sex. Detlev and
+  Eberhard were men; Cordula, Elvide and Frauke were women. Please put that right on their
+  records.
+subjects:
+  detlev: {namespace: people, first_name: Detlev, surname: Nordhagen}
+  cordula: {namespace: people, first_name: Cordula, surname: Nordhagen}
+  elvide: {namespace: people, first_name: Elvide, surname: Nordhagen}
+  eberhard: {namespace: people, first_name: Eberhard, surname: Nordhagen}
+  frauke: {namespace: people, first_name: Frauke, surname: Nordhagen}
+guards:
+  people: [detlev, cordula, elvide, eberhard, frauke]
+  families: []
+  sources: []
+maxdrop: 0
+assertions:
+  - id: uc22/counts
+    kind: counts
+    deltas: {}
+  - id: uc22/detlev-is-male
+    kind: person
+    subject: detlev
+    fields: {gender: 1}
+  - id: uc22/eberhard-is-male
+    kind: person
+    subject: eberhard
+    fields: {gender: 1}
+  - id: uc22/cordula-is-female
+    kind: person
+    subject: cordula
+    fields: {gender: 0}
+  - id: uc22/elvide-is-female
+    kind: person
+    subject: elvide
+    fields: {gender: 0}
+  - id: uc22/frauke-is-female
+    kind: person
+    subject: frauke
+    fields: {gender: 0}

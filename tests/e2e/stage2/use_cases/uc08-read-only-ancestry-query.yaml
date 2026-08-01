@@ -1,0 +1,23 @@
+# uc8 — advisory. A read leaves no delta, so the only class-A statement available is that
+# nothing moved; which of the two read tools answered is class B and may never gate.
+id: uc8
+tier: 3
+primary: [gramps_get_relations, gramps_get_ancestors]
+prompt: >-
+  Who are Brunhild Bernwald's parents? Just give me their names.
+subjects:
+  target: {namespace: people, first_name: Brunhild, surname: Bernwald}
+guards: {people: [], families: [], sources: []}
+maxdrop: 0
+leak_waivers:
+  - token: parent
+    reason: >-
+      "parents" is the question itself, and the tool it points at is gramps_set_family_parent,
+      which writes. It can only mislead the model, never hand it the read tool this use case
+      is a test of — and the class-A assertion here is precisely that nothing was written.
+assertions:
+  - id: uc8/nothing-was-written
+    kind: tree_unchanged
+  - id: uc8/a-read-tool-answered
+    kind: tool_log
+    used_any: [gramps_get_relations, gramps_get_ancestors]
