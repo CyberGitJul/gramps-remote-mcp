@@ -23,6 +23,11 @@ from typing import Any
 
 from .docker_util import ProbeError
 
+# How often the read loop looks up from the queue to ask whether the server is still alive,
+# and how long it then waits for the pipe to drain before calling the answer lost.
+DEATH_CHECK_S = 0.25
+DRAIN_S = 2.0
+
 
 @dataclass
 class ToolResult:
@@ -50,11 +55,13 @@ class McpSession:
         self._next_id = 0
         self._lines: queue.Queue[str] = queue.Queue()
         self.stderr: list[str] = []
-        self._pump(self._proc.stdout, self._lines.put)
+        self._stdout_pump = self._pump(self._proc.stdout, self._lines.put)
         self._pump(self._proc.stderr, self.stderr.append)
 
-    def _pump(self, stream: Any, sink: Any) -> None:
-        threading.Thread(target=lambda: [sink(line) for line in stream], daemon=True).start()
+    def _pump(self, stream: Any, sink: Any) -> threading.Thread:
+        thread = threading.Thread(target=lambda: [sink(line) for line in stream], daemon=True)
+        thread.start()
+        return thread
 
     def _request(
         self, method: str, params: dict[str, Any] | None = None, *, timeout: float = 60.0
@@ -74,8 +81,9 @@ class McpSession:
                     f"{method} timed out after {timeout}s; stderr={''.join(self.stderr)[-400:]}"
                 )
             try:
-                line = self._lines.get(timeout=remaining)
+                line = self._lines.get(timeout=min(remaining, DEATH_CHECK_S))
             except queue.Empty:
+                self._raise_if_dead(method)
                 continue
             try:
                 msg = json.loads(line)
@@ -83,6 +91,31 @@ class McpSession:
                 continue
             if msg.get("id") == msg_id:
                 return msg
+
+    def _raise_if_dead(self, method: str) -> None:
+        """A server that exited is not a server that is slow, and must not read as a timeout.
+
+        This is the shape of the failure that shipped twice: a module missing from the image's
+        `COPY` list makes the process die on import, and every call against it then waited out
+        the full timeout and reported "timed out" — which points at the network, at the
+        instance, at anything but the image. Waiting 60 s to say the wrong thing is worse than
+        waiting 60 s.
+
+        The exit is not enough on its own: a server may answer and *then* exit, and that answer
+        is legitimate. So the stdout pump is joined first — once the process is gone and the
+        pipe has drained, whatever is in the queue is everything that will ever arrive — and a
+        non-empty queue hands the decision back to the read loop.
+        """
+        code = self._proc.poll()
+        if code is None:
+            return
+        self._stdout_pump.join(timeout=DRAIN_S)
+        if not self._lines.empty():
+            return
+        raise ProbeError(
+            f"the server process exited with code {code} before answering {method}; "
+            f"stderr={''.join(self.stderr)[-400:]}"
+        )
 
     def _write(self, payload: dict[str, Any]) -> None:
         if self._proc.stdin is None:  # pragma: no cover - Popen always gives us a pipe here
