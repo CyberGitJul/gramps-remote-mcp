@@ -10,6 +10,7 @@ Needs Docker. Auto-marked `e2e` by conftest.py, so `pytest -q` never runs it.
 
 from __future__ import annotations
 
+import pytest
 from harness.docker_util import INT_CONTAINERS, NAME_PREFIX, docker, inspect_container
 from harness.gramps_instance import (
     OWNER_PW,
@@ -19,6 +20,11 @@ from harness.gramps_instance import (
     GrampsInstance,
 )
 from harness.runid import LABEL_KEY, new_runid
+
+# Needs a live Gramps Web instance, not merely Docker. Declared rather than inferred: the
+# required CI leg selects `-m 'e2e and not gramps'`, and a module that forgets this marker
+# would drag a whole instance bring-up into the job that is meant to need no services.
+pytestmark = pytest.mark.gramps
 
 
 def _ours(kind: str) -> set[str]:

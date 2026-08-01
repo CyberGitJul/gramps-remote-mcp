@@ -37,6 +37,11 @@ from harness.token_audit import TokenAudit
 
 from gramps_client import IMPORT_MIN_SETTLE
 
+# Needs a live Gramps Web instance, not merely Docker. Declared rather than inferred: the
+# required CI leg selects `-m 'e2e and not gramps'`, and a module that forgets this marker
+# would drag a whole instance bring-up into the job that is meant to need no services.
+pytestmark = pytest.mark.gramps
+
 EMPTY_IMPORT = "adds-nothing.gramps"
 
 # The shortest settle window that still separates "this import added nothing" from "this
