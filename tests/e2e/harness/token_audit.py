@@ -20,7 +20,17 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from .docker_util import ProbeError
+
 TOKEN_PATH = "/api/token/"
+
+
+@dataclass(frozen=True)
+class Mark:
+    """Where a count starts, and the line that proves it is still the same log."""
+
+    index: int
+    witness: str | None
 
 
 @dataclass(frozen=True)
@@ -67,24 +77,48 @@ class TokenAudit:
         self.posts = [post for post in map(parse_access_line, self._read_log()) if post]
         return self.posts
 
-    def mark(self) -> int:
+    def mark(self) -> Mark:
         """A cursor into the log, so a later `since()` reports only what a call caused."""
         self.refresh()
-        return len(self.posts)
+        return Mark(len(self.posts), self.posts[-1].raw if self.posts else None)
 
-    def since(self, mark: int) -> list[TokenPost]:
+    def _after(self, mark: Mark | None) -> list[TokenPost]:
+        """Everything past the cursor — or a refusal, if the cursor no longer means anything.
+
+        `restart_web()` removes the web container and starts a new one, and `docker logs` for a
+        new container starts empty. A plain index into that stream survives the restart looking
+        perfectly valid and silently addresses a different log: `posts[mark:]` on a shorter list
+        is `[]`, and `[]` reads as "nothing happened" — which is the answer a 429 regression
+        test would most like to hear and least deserve. So the cursor carries the line it was
+        taken at, and a cursor that no longer finds it refuses instead of counting to zero.
+        """
+        if mark is None:
+            return self.posts
+        if len(self.posts) < mark.index or (
+            mark.witness is not None
+            and (mark.index == 0 or self.posts[mark.index - 1].raw != mark.witness)
+        ):
+            raise ProbeError(
+                "the access log no longer contains the line this cursor was taken at — "
+                "the web container was replaced, so a count against it would be meaningless"
+            )
+        return self.posts[mark.index :]
+
+    def since(self, mark: Mark) -> list[TokenPost]:
         self.refresh()
-        return self.posts[mark:]
+        return self._after(mark)
 
-    def count(self, ip: str | None = None, status: int | None = None, *, mark: int = 0) -> int:
+    def count(
+        self, ip: str | None = None, status: int | None = None, *, mark: Mark | None = None
+    ) -> int:
         return sum(
             1
-            for post in self.posts[mark:]
+            for post in self._after(mark)
             if (ip is None or post.ip == ip) and (status is None or post.status == status)
         )
 
-    def by_ip(self, *, mark: int = 0) -> dict[str, int]:
-        return dict(Counter(post.ip for post in self.posts[mark:]))
+    def by_ip(self, *, mark: Mark | None = None) -> dict[str, int]:
+        return dict(Counter(post.ip for post in self._after(mark)))
 
     def positive_control(self, mint: Callable[[], object]) -> dict[str, object]:
         """Prove the parser sees a known-good request: mint one token, then find it.

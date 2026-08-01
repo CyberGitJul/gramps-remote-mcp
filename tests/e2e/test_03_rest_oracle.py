@@ -15,6 +15,11 @@ from harness.mcp_container import ImageRef, McpContainer, container_name
 from harness.rest import GrampsRest
 from harness.runid import new_runid
 
+# Needs a live Gramps Web instance, not merely Docker. Declared rather than inferred: the
+# required CI leg selects `-m 'e2e and not gramps'`, and a module that forgets this marker
+# would drag a whole instance bring-up into the job that is meant to need no services.
+pytestmark = pytest.mark.gramps
+
 
 @pytest.fixture(scope="module")
 def instance() -> Iterator[GrampsInstance]:

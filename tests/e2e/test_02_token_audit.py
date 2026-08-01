@@ -8,6 +8,8 @@ count assertion turns vacuous.
 
 from __future__ import annotations
 
+import pytest
+from harness.docker_util import ProbeError
 from harness.token_audit import TokenAudit, parse_access_line
 
 HOST_IP, CONTAINER_IP = "172.24.0.1", "172.24.0.4"
@@ -47,6 +49,38 @@ def test_mark_and_since_report_only_what_came_after() -> None:
     fresh = parsed.since(mark)
     assert [post.ip for post in fresh] == ["172.24.0.9"]
     assert parsed.count(mark=mark) == 1
+
+
+def test_a_cursor_taken_before_a_container_swap_refuses_to_count() -> None:
+    """`restart_web()` replaces the web container, and a new container's log starts empty.
+
+    The old index still *works* — it slices a shorter list to `[]` — and `[]` reads as "no
+    token was minted", which is exactly the answer the 429 regression test must never be handed
+    for free. Both shapes are covered: a log that shrank, and one that grew back past the index
+    with different content.
+    """
+    lines = list(LOG)
+    parsed = TokenAudit(lambda: lines)
+    mark = parsed.mark()
+
+    lines.clear()
+    with pytest.raises(ProbeError, match="cursor was taken at"):
+        parsed.since(mark)
+
+    lines.extend(["ACCESS 10.0.0.1 POST /api/token/ HTTP/1.1 200"] * len(LOG))
+    with pytest.raises(ProbeError, match="cursor was taken at"):
+        parsed.since(mark)
+
+
+def test_a_cursor_from_an_empty_log_still_counts_from_the_beginning() -> None:
+    """Nothing to witness is not a broken cursor: an empty log has no line to lose."""
+    lines: list[str] = []
+    parsed = TokenAudit(lambda: lines)
+    mark = parsed.mark()
+
+    lines.append("ACCESS 10.0.0.1 POST /api/token/ HTTP/1.1 200")
+
+    assert len(parsed.since(mark)) == 1
 
 
 def test_noise_never_raises() -> None:

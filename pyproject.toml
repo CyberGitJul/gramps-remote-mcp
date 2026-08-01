@@ -7,6 +7,7 @@ testpaths = ["tests"]
 addopts = "-m 'not e2e'"
 markers = [
   "e2e: needs Docker and a disposable Gramps Web instance (auto-stamped under tests/e2e)",
+  "gramps: brings up a live Gramps Web instance, not merely Docker — the required CI leg runs `-m 'e2e and not gramps'` and must stay free of services",
   "refusal: negative or error-text case — nightly only; highest rot, least signal per second",
   "upstream_pin: grades Gramps Web rather than this repo — excluded from the floating-digest leg",
 ]

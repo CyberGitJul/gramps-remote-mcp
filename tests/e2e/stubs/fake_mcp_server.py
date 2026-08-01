@@ -17,7 +17,14 @@ import sys
 from typing import Any
 
 SERVER_INFO = {"name": "stub", "version": "0"}
-TOOLS = [{"name": "echo"}, {"name": "boom"}, {"name": "rpcfail"}, {"name": "silent"}]
+TOOLS = [
+    {"name": "echo"},
+    {"name": "boom"},
+    {"name": "rpcfail"},
+    {"name": "silent"},
+    {"name": "die"},
+    {"name": "lastword"},
+]
 
 
 def emit(payload: dict[str, Any]) -> None:
@@ -61,6 +68,16 @@ def handle(msg: dict[str, Any]) -> None:
         sys.stderr.write("stub: refusing to answer 'silent'\n")
         sys.stderr.flush()
         return
+    if name == "die":
+        # The image-is-broken shape: a reason on stderr, no answer, and gone.
+        sys.stderr.write("stub: ModuleNotFoundError: no module named 'backup_store'\n")
+        sys.stderr.flush()
+        raise SystemExit(3)
+    if name == "lastword":
+        # The other half: an answer *and* an exit. Losing this reply would make the death
+        # check a bug of its own, so the stub can produce it on purpose.
+        result(msg_id, {"content": [{"type": "text", "text": "answered on the way out"}]})
+        raise SystemExit(0)
     if name == "rpcfail":
         emit({"jsonrpc": "2.0", "id": msg_id, "error": {"code": -32602, "message": "no such tool"}})
         return

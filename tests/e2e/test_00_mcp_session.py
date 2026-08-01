@@ -15,14 +15,17 @@ framing are the real ones — only the container is gone.
 
 from __future__ import annotations
 
+import io
+import json
 import subprocess
 import sys
+import time
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from harness.docker_util import ProbeError
-from harness.mcp_session import McpSession
+from harness.mcp_session import DEATH_CHECK_S, McpSession
 
 STUB = Path(__file__).parent / "stubs" / "fake_mcp_server.py"
 
@@ -88,6 +91,78 @@ def test_a_silent_tool_times_out_and_shows_the_stderr_tail(session: McpSession) 
     session.initialize()
     with pytest.raises(ProbeError, match="refusing to answer"):
         session.call("silent", timeout=1.0)
+
+
+def test_a_dead_server_is_reported_as_dead_not_as_slow(session: McpSession) -> None:
+    """The Dockerfile-COPY failure, in miniature: the process dies and never answers.
+
+    Before this, the call waited out its whole timeout and reported "timed out", which points
+    at the network or the instance — anything but the image. The exit code and the reason the
+    server printed are both in the message, because the reason is the part that identifies it.
+    """
+    session.initialize()
+    with pytest.raises(ProbeError, match="exited with code 3") as raised:
+        session.call("die", timeout=30.0)
+
+    assert "backup_store" in str(raised.value), "the server's own reason must survive"
+
+
+def test_an_answer_that_arrives_as_the_server_exits_is_not_lost(session: McpSession) -> None:
+    """The death check must not eat a legitimate reply that raced the process exit.
+
+    Without joining the output pump first, this is a coin flip: the process is already gone
+    while its last line is still in the pipe, and the call would report a crash instead of the
+    answer it was given.
+    """
+    session.initialize()
+
+    assert session.call("lastword", timeout=30.0).text == "answered on the way out"
+
+
+class ExitedServer:
+    """A process that is *already gone* while its answer is still travelling up the pipe.
+
+    The real race — a container that answers and exits in the same breath — is not reliably
+    reproducible against a local pipe: the line is almost always in the queue before anyone
+    thinks to ask whether the process is alive. Five runs of that stub caught nothing. So the
+    timing is made explicit instead: `poll()` reports the exit from the first moment, and the
+    line arrives after the death check has already looked once and found the queue empty.
+    """
+
+    def __init__(self, line: str, delay: float) -> None:
+        self.stdin = io.StringIO()
+        self.stdout = self._late(line, delay)
+        self.stderr = iter(())
+        self.returncode = 0
+
+    @staticmethod
+    def _late(line: str, delay: float) -> Iterator[str]:
+        time.sleep(delay)
+        yield line
+
+    def poll(self) -> int:
+        return 0
+
+
+def test_a_final_answer_still_in_the_pipe_is_not_called_a_crash() -> None:
+    """The drain is what makes the death check safe, and this is the only test that needs it.
+
+    Without joining the output pump, the check sees an exited process and an empty queue and
+    calls a perfectly good answer a crash — a false red produced by the very guard that exists
+    to make a real crash legible.
+    """
+    answer = {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "late"}]}}
+    session = McpSession(ExitedServer(json.dumps(answer) + "\n", delay=DEATH_CHECK_S * 2))
+
+    assert session.call("whatever", timeout=10.0).text == "late"
+
+
+def test_an_exited_server_with_nothing_left_to_say_is_a_crash() -> None:
+    """The other side of the same branch: drained, empty, and therefore genuinely dead."""
+    session = McpSession(ExitedServer("", delay=0.0))
+
+    with pytest.raises(ProbeError, match="exited with code 0"):
+        session.call("whatever", timeout=10.0)
 
 
 def test_list_tools_returns_the_page_including_its_cursor(session: McpSession) -> None:
