@@ -88,6 +88,22 @@ def test_the_scan_sees_the_suite(cases: list[Case]) -> None:
     )
 
 
+def test_both_directions_have_a_population(cases: list[Case]) -> None:
+    """Deferred from T4.0 (work-order A8) to the first commit that produces a refusal case.
+
+    Until then the two checks above were vacuously true — nothing carried the marker, so
+    "no marked case is unproven" and "no module is half-marked" were statements about the empty
+    set, and the lint would have kept passing if the marker had never been applied at all. This
+    is the assertion that notices if a whole matrix loses its `refusal` annotations at once, or
+    if the marker gets applied and the nightly leg then quietly holds nothing."""
+    marked = [case for case in cases if MARKER in case.markers]
+
+    assert marked, "no test carries `refusal`, so the two checks above assert nothing"
+    assert {case.origin for case in marked} >= {"test_20_people.py"}, (
+        "the people matrix stopped carrying the marker its negative cases were selected for"
+    )
+
+
 def test_the_marker_is_registered(pytestconfig: pytest.Config) -> None:
     """An unregistered marker is a warning, not an error, and `-m 'not refusal'` would then
     deselect nothing while looking like it deselected the nightly half."""
