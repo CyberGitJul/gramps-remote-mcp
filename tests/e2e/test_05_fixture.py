@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 from fixtures import cast
+from fixtures import stage2_subjects as s2
 from harness.gramps_instance import OWNER_PW, OWNER_USER, ROLE_OWNER, GrampsInstance
 from harness.mcp_container import ImageRef, McpContainer, container_name
 from harness.rest import GrampsRest
@@ -35,6 +36,24 @@ TREE_FILE = Path(__file__).parent / "fixtures" / "synthetic-tree.gramps"
 COUSINS_FILE = Path(__file__).parent / "fixtures" / cast.COUSINS["filename"]
 PAGESIZE = 20
 UNKNOWN_SEX = 2
+
+
+def cast_person(given: str, surname: str) -> str:
+    """The id of the one person in the cast with that name.
+
+    The way anything in this suite is allowed to name a fixture record: by the thing that
+    survives a regrow. Ids do not — T4.5 moved every id past its insertion point — so a test
+    that spells one changes subject silently instead of going red, which is what
+    `test_00_id_literals.py` now refuses. That "the one" is a fact and not a hope is the
+    naming invariant `test_00_fixture_xml.py` asserts.
+    """
+    matches = [
+        person["gramps_id"]
+        for person in cast.PEOPLE
+        if person["first_name"] == given and person["surname"] == surname
+    ]
+    assert len(matches) == 1, f"{given} {surname} is not one person in the cast"
+    return matches[0]
 
 
 @pytest.fixture(scope="module")
@@ -151,6 +170,13 @@ def test_every_family_reads_back_with_the_members_the_cast_records(imported: Gra
 
         assert parents == {expected["spouse_a"], expected["spouse_b"]} - {None}
         assert children == set(expected["children"])
+        # Per slot, not just as a set. Membership cannot see a swap, and "which slot is the
+        # bloodline" is the entire premise of the family-graph group: for six of these
+        # families the father is a woman, because two female spouses fall through to call
+        # order. The slots in the cast are measured (T4.5), so this compares the tree against
+        # the tree — not against a rule re-derived from the product.
+        assert person_id.get(family["father_handle"]) == (expected["father"] or None)
+        assert person_id.get(family["mother_handle"]) == (expected["mother"] or None)
 
 
 def test_the_families_carry_their_children(imported: GrampsRest) -> None:
@@ -168,24 +194,57 @@ def test_the_household_missing_a_parent_reads_back_missing_it(imported: GrampsRe
     second household beside it. With both slots filled in the fixture there is nothing to fill.
 
     That the surviving parent lands in the mother slot is the product's documented rule for a
-    single female spouse (`server.py:134-141`), so it is asserted rather than assumed."""
-    declared = [family for family in cast.FAMILIES if family["spouse_b"] is None]
-    assert len(declared) == 1, "the fixture no longer holds exactly one one-parent household"
+    single female spouse (`server.py:134-141`), so it is asserted rather than assumed.
+
+    Identified by the person uc14 is declared to be about, not as "the only one-parent
+    household": T4.5 added two more, and one of them fills the *father* slot instead, so that
+    both orientations exist and no case can pass by assuming the empty slot is the father's.
+    Selection by membership rather than by slot, because the slot is what is under test."""
+    mother = cast_person(*s2.HOUSEHOLD_MOTHER[:2])
+    households = [family for family in cast.FAMILIES if family["spouse_b"] is None]
+    assert len(households) == 3, "the one-parent households of the fixture have changed"
+    declared = [
+        family for family in households if mother in (family["spouse_a"], family["spouse_b"])
+    ]
+    assert len(declared) == 1, "uc14's household is not exactly one family in the cast"
+
     families = {family["gramps_id"]: family for family in imported.families()}
-    household = families[str(declared[0]["gramps_id"])]
+    household = families[declared[0]["gramps_id"]]
 
     assert household["mother_handle"], "the single spouse is not in the mother slot"
     assert not household["father_handle"], "the slot uc14 exists to fill is already taken"
 
 
+def test_the_other_single_parent_fills_the_father_slot(imported: GrampsRest) -> None:
+    """The mirror of the household above, and the reason the family-graph group can tell
+    "the empty slot" from "the father slot". `_assign_parent_handles` empties the father slot
+    only for a lone *female* spouse; anyone else lands in it."""
+    families = {family["gramps_id"]: family for family in imported.families()}
+    household = families[str(cast.GRAPH["single_parent_family"])]
+
+    assert household["father_handle"], "the single spouse is not in the father slot"
+    assert not household["mother_handle"]
+
+
 def test_the_census_five_are_the_only_records_without_a_sex(imported: GrampsRest) -> None:
     """uc22 turns `2=Unknown` into three females and two males through one bulk call. If
-    anybody else were Unknown, "nobody else moved" would stop being decidable."""
+    anybody else *of that household* were Unknown, "nobody else moved" would stop being
+    decidable.
+
+    T4.5 added three more Unknown people for the family-graph slot cases, so the count is no
+    longer "the Unknown people". uc22's five are the ones carrying the census surname — which
+    is what its subject selector resolves on anyway, so this now asserts the property the use
+    case actually depends on rather than a global that happened to coincide with it."""
     declared = {p["gramps_id"] for p in cast.PEOPLE if p["gender"] == UNKNOWN_SEX}
     landed = {p["gramps_id"] for p in imported.people() if p["gender"] == UNKNOWN_SEX}
+    census = {
+        p["gramps_id"]
+        for p in cast.PEOPLE
+        if p["gender"] == UNKNOWN_SEX and p["surname"] == s2.CENSUS_SURNAME
+    }
 
     assert landed == declared
-    assert len(landed) == 5
+    assert len(census) == 5
 
 
 def test_the_name_history_reads_back_as_plain_strings(imported: GrampsRest) -> None:

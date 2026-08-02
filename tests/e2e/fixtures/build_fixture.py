@@ -37,6 +37,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 FIXTURE_DIR = Path(__file__).resolve().parent
 E2E_ROOT = FIXTURE_DIR.parent
@@ -47,6 +48,7 @@ from harness.mcp_container import McpContainer, container_name, image_from_env  
 from harness.rest import GrampsRest  # noqa: E402
 from harness.runid import new_runid  # noqa: E402
 
+from fixtures import graph_subjects as g3  # noqa: E402
 from fixtures import stage2_subjects as s2  # noqa: E402
 from fixtures.builder import Builder  # noqa: E402
 from fixtures.emit import render_cast, write_manifest  # noqa: E402
@@ -86,6 +88,83 @@ def measure_name_types(rest: GrampsRest, gramps_id: str) -> dict[str, object]:
     }
 
 
+def measure_graph(rest: GrampsRest, roles: dict[str, str]) -> dict[str, Any]:
+    """Parent slots and reverse-reference order, read back off the built tree (plan T4.5).
+
+    `cast.FAMILIES` records `spouse_a`/`spouse_b` — the *arguments* `gramps_add_family` was
+    called with. Which of them lands in `father_handle` is the product's own rule, and for six
+    committed families the answer is not the intuitive one: two female spouses fall through to
+    call order, so `spouse_a` is the father. A test that read `spouse_a` as "the father" would
+    be re-deriving `_assign_parent_handles` from the code it is testing. So the slots are read
+    back and written down, and every consumer looks them up instead of deducing them.
+
+    The orders are server behaviour and are measured for the same reason: `get_ancestors` walks
+    `parent_family_list` and reports father-then-mother per family, so the order of that list
+    decides what the tool returns, and nobody here gets to choose it.
+
+    It also answers the design's `U-2`, the single most consequential unknown in the family
+    group: all eleven read tools consult the *person*-side `family_list` / `parent_family_list`,
+    while all four write tools PUT only the *family* object. If the API does not maintain the
+    reverse reference, every write tool in that group is functionally broken and 259 mocked
+    tests cannot see it. `reverse_refs` records the answer rather than the repo's claim.
+    """
+    people = {person["gramps_id"]: person for person in rest.people()}
+    families = {family["gramps_id"]: family for family in rest.families()}
+    family_of = {family["handle"]: gramps_id for gramps_id, family in families.items()}
+    person_of = {person["handle"]: gramps_id for gramps_id, person in people.items()}
+
+    def slots(family: dict[str, Any]) -> tuple[str, str]:
+        return (
+            person_of.get(str(family.get("father_handle") or ""), ""),
+            person_of.get(str(family.get("mother_handle") or ""), ""),
+        )
+
+    def family_ids(handles: Any) -> list[str]:
+        return [family_of[str(handle)] for handle in handles or [] if str(handle) in family_of]
+
+    def parents_of(gramps_id: str) -> list[str]:
+        found: list[str] = []
+        for family_id in family_ids(people[gramps_id].get("parent_family_list")):
+            found += [slot for slot in slots(families[family_id]) if slot]
+        return found
+
+    def depth(gramps_id: str, seen: tuple[str, ...] = ()) -> int:
+        if gramps_id in seen:
+            raise SystemExit(f"the fixture lineage loops at {gramps_id}")
+        return 1 + max((depth(p, (*seen, gramps_id)) for p in parents_of(gramps_id)), default=0)
+
+    adopted = people[roles["adopted_child"]]
+    remarried = people[roles["remarried"]]
+    main = families[roles["main_family"]]
+    parent_families = family_ids(adopted.get("parent_family_list"))
+    return {
+        "slots": {
+            gramps_id: {"father": slots(family)[0], "mother": slots(family)[1]}
+            for gramps_id, family in families.items()
+        },
+        "graph": {
+            "lineage_surname": roles["lineage_surname"],
+            "remarried": {
+                "gramps_id": remarried["gramps_id"],
+                "family_order": family_ids(remarried.get("family_list")),
+            },
+            "adopted_child": {
+                "gramps_id": adopted["gramps_id"],
+                "parent_family_order": parent_families,
+            },
+            "single_parent_family": roles["single_parent_family"],
+            "deepest": roles["deepest"],
+            "generations": depth(roles["deepest"]),
+            # U-2: "api" means the server maintains the person-side reverse reference when only
+            # the family object is written. "absent" would mean the family group's write tools
+            # are broken in a way no mocked test can see.
+            "reverse_refs": "api" if len(parent_families) == 2 else "absent",
+            # U-4: what a `ChildRefType` written as `{"value": 1}` reads back as.
+            "childref_rel": (main.get("child_ref_list") or [{}])[0].get("frel"),
+        },
+    }
+
+
 def measure_cousins_import(
     builder: Builder, rest: GrampsRest, before: dict[str, int]
 ) -> dict[str, object]:
@@ -121,6 +200,9 @@ def build(rest: GrampsRest, mcp: McpContainer, backup: Path) -> None:
     builder = Builder(mcp)
     builder.grow()
     s2.grow(builder)
+    # Last, always: ids are server-assigned in creation order, so a block inserted above this
+    # one renumbers every Stage-2 subject and every id in test_00_stage2_catalog.py.
+    roles = g3.grow(builder)
     if builder.people[0]["gramps_id"] != "I0000":
         raise SystemExit(f"the canonical cast does not start at I0000: {builder.people[0]}")
 
@@ -150,12 +232,39 @@ def build(rest: GrampsRest, mcp: McpContainer, backup: Path) -> None:
     reimported = rest.object_counts()
     if reimported != counts:
         raise SystemExit(f"the fixture does not import back as built: {reimported} != {counts}")
+    # Measured on the **re-imported** tree, because that is the state every matrix reads: the
+    # export/import round trip is what `seeded_tree` performs, and slots or reverse references
+    # that survived the growth but not the round trip would be a fact about the wrong tree.
+    measured = measure_graph(rest, roles)
+    families = [
+        {
+            "gramps_id": entry["gramps_id"],
+            "spouse_a": entry["spouse_a"],
+            "spouse_b": entry["spouse_b"],
+            "father": measured["slots"][entry["gramps_id"]]["father"],
+            "mother": measured["slots"][entry["gramps_id"]]["mother"],
+            "children": entry["children"],
+        }
+        for entry in builder.families
+    ]
+    if measured["graph"]["reverse_refs"] != "api":
+        raise SystemExit(
+            "the API did not maintain the person-side parent_family_list (design U-2): "
+            f"{measured['graph']}"
+        )
+
     cousins_fact = measure_cousins_import(builder, rest, counts)
-    print(f"name types: {name_types}\ncousins import: {cousins_fact}")
+    print(f"name types: {name_types}\ngraph: {measured['graph']}\ncousins import: {cousins_fact}")
 
     CAST_FILE.write_text(
         render_cast(
-            builder.people, builder.families, builder.sources, counts, cousins_fact, name_types
+            builder.people,
+            families,
+            builder.sources,
+            counts,
+            cousins_fact,
+            name_types,
+            measured["graph"],
         )
     )
     write_manifest([TREE_FILE, COUSINS_FILE], MANIFEST_FILE)

@@ -41,9 +41,9 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `stage2/subjects.py` | who a use case is about, selected from the tree — **never by id** (T2.2) |
 | `stage2/validate.py` | whether a loaded use case would measure anything at all |
 | `stage2/leak_lint.py` | no prompt may name the tool it expects (T2.7) — runs in `lint.yml` |
-| `fixtures/synthetic-tree.gramps` | the canonical tree (D2): 56 people, 22 families, 23 sources, plain XML |
+| `fixtures/synthetic-tree.gramps` | the canonical tree (D2): 74 people, 27 families, 23 sources, plain XML |
 | `fixtures/cousins-branch.gramps` | the uc19 import input: three people and one family, grown by the same build |
-| `fixtures/cast.py` | every id, the observed counts and two measurements — **no test body may carry an id literal** |
+| `fixtures/cast.py` | every id, the observed counts and two measurements — **no test body may carry an id literal**, linted by `test_00_id_literals.py` |
 | `fixtures/build_fixture.py` | regrows both files with the server's own tools; run rarely |
 | `fixtures/builder.py` | the growing itself: one method per tool, remembering every id it is handed |
 | `fixtures/stage2_subjects.py` | the affordances a well-formed tree cannot supply, one block per use case |
@@ -64,6 +64,15 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `test_80_regressions.py` | T3.3: the cold-client 429 as a token *count*, and `IMPORT_MIN_SETTLE` |
 | `test_81_image_contract.py` | T3.3: the in-image import (D19) and the `mcp<2` pin, where it is installed |
 | `test_00_ci_legs.py` | T3.4: every module declares whether it needs an instance, both directions linted |
+| `test_00_refusal_marker.py` | T4.0: `@pytest.mark.refusal` proves a refusal, and is used consistently once used |
+| `test_00_content_digest.py` | T4.0: the content digest sees the field writes the identity one is built not to |
+| `test_00_chain.py` | T4.0: which failure breaks an ordered chain, and what the skip line says |
+| `test_00_fixture_xml.py` | T4.5: the committed XML holds the cast's families, and no name contains another |
+| `test_00_id_literals.py` | T4.1: a module that runs against the tree names an id only through the cast |
+| `test_10_seeded_tree.py` | T4.0 acceptance: a class dirties the tree, the next one gets it back — and the seeder had to work for it |
+| `test_20_people.py` | T4.2: the people/name tools, cut to the cases whose answer lives in the server |
+| `test_21_blog_backup.py` | T4.3: the blog chain, and export → wipe → restore proving the backup is a way back |
+| `test_40_families.py` | T4.4: parent slots, the reverse references three docstrings promise, traversal |
 
 Phase 0 created the probe and the harness skeleton; T1.1 added the gate, T1.2 the reaper, T1.3
 the restartable instance, T1.4 the oracle plus the token audit, T1.5 the container and T1.6 the
@@ -91,6 +100,20 @@ dedented — the text is pinned, its leading whitespace deliberately is not. Pin
 would have made the suite red on every machine whose interpreter differs from the image's,
 which is the harness accusing the product.
 
+Phase 4 is the three Stage-1 matrices. They are **43 cases, not the 135 the design enumerated**:
+the selection criterion was decidability rather than coverage — a case earns a live instance only
+if the answer lives in the server's behaviour, because the mocked unit suite can confirm the body
+the product built and nothing more, and Stage 2 drives each tool along exactly one happy path. The
+per-case reasoning is in `.claude/worknotes/e2e-suite/phase-4/triage-product-risk.md`.
+
+**One measurement from Phase 4 is worth carrying:** every field write is a read-modify-write that
+reads a *collection* projection (`?gramps_id=`) and PUTs it back as the whole object, and the
+server does not merge — a partial body answers 200 and blanks every omitted field. Had the
+collection projection been narrower than the object, every single-field edit would have destroyed
+the difference silently. It is not: both projections were measured byte-identical in all three
+namespaces the product treats this way. Three cases — one per namespace — exist to notice if that
+changes, and they say in their docstrings that they are pins rather than discoveries.
+
 ### The canonical fixture (D2)
 
 Grown with the server's **own tools** rather than hand-written, so it carries the side effects
@@ -99,9 +122,9 @@ blog post creates `Blog`. A fixture seeding neither would make the first write i
 test move the tag count by one and read as a failure. Every person in it is invented — the repo
 is public and the real `.gramps` backups are a real family tree.
 
-21 is not a round number: `count_people`/`count_families`/`count_sources` in the product are
+23 is not a round number: `count_people`/`count_families`/`count_sources` in the product are
 `len(unpaginated list)` against a default pagesize of 20, so at 20 or fewer the pagination
-assumption is untestable.
+assumption is untestable. Sources are the tightest of the three, three above the page.
 
 Stored as plain XML. Measured: two exports of an unchanged tree are byte-identical *after*
 ungzipping, so the UUID that makes a `.gramps` file unreproducible sits in the gzip wrapper,
@@ -150,7 +173,7 @@ hand, so a tag can move out from under a run in flight. The resolved id is what 
 ```bash
 pytest -q                       # unit suite only: 259 passed, e2e deselected, no Docker
 pytest -q -m e2e                # everything, including live Gramps Web instances
-pytest -q -m "e2e and not gramps"   # Docker but no services — the required CI leg, ~40 s
+pytest -q -m "e2e and not gramps and not refusal"   # the required CI leg: Docker, no services, ~40 s
 pytest -q -m e2e -k test_00     # no Docker at all, ~4 s (also a step in the lint workflow)
 pytest --e2e-reap-only          # reap stale gwe2e-* resources, prune artifact dirs, exit
 pytest --e2e-reap-only --e2e-force --e2e-keep-runs=1   # also remove a *running* instance
@@ -162,11 +185,26 @@ pytest --e2e-reap-only --e2e-force --e2e-keep-runs=1   # also remove a *running*
 
 ### Three legs, and which is required
 
-`image-contract` in `.github/workflows/e2e.yml` runs `-m "e2e and not gramps"` and is
-**required**: Docker only, no Gramps Web, no Redis, no credentials, no secrets — so nothing in
-it can be red for a reason that is not a defect. `stage1` runs the whole suite against live
-instances and is **advisory** until 20 consecutive runs have failed only for genuine reasons;
-the promotion rule is written into the workflow so it cannot stay advisory by inertia.
+`image-contract` in `.github/workflows/e2e.yml` runs `-m "e2e and not gramps and not refusal"`
+and is **required**: Docker only, no Gramps Web, no Redis, no credentials, no secrets — so
+nothing in it can be red for a reason that is not a defect. `stage1` runs `-m "e2e and not
+refusal"` against live instances and is **advisory** until 20 consecutive runs have failed only
+for genuine reasons; the promotion rule is written into the workflow so it cannot stay advisory
+by inertia. `nightly` is the only job that runs `-m e2e` whole — that is what "nightly only"
+means for the third marker.
+
+**`refusal` — the marker whose effect is less CI.** The negative and error-text cases of the
+Stage-1 matrices carry the highest rot and the least signal per second, so they run once a night
+instead of on every push. `test_00_refusal_marker.py` lints it, asymmetrically, because the two
+mistakes are not equally bad. A **marked case that proves no refusal** is a test that quietly
+stopped running on pull requests while still reading as coverage — checked everywhere, no
+exceptions; a case proves one by calling `assert_refusal(...)` *or* by reading `is_error`, since
+several honest negatives have no authored fragment to name and `test_00_vocabulary.py` is right
+to reject one. A **refusing case without the marker** merely costs time, and demanding the marker
+everywhere would be wrong: the eight committed `assert_refusal` callers exist to prove the
+*helper* works, two of them live, and they are the positive control for every marked case that
+trusts it. So the marker is enforced **per module, once that module uses it** — which catches the
+state that actually goes wrong: half a matrix marked, the other half silently back on the PR tier.
 
 Which leg a module belongs to is **declared, not inferred**: the seven modules that bring up an
 instance carry `pytestmark = pytest.mark.gramps`, and `test_00_ci_legs.py` lints both

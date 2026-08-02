@@ -56,6 +56,33 @@ def test_the_reset_leaves_exactly_the_declared_inputs(backup: BackupDir) -> None
     assert set(backup.listing()) == {"tree.gramps"}
 
 
+def test_the_reset_keeps_the_directory_the_container_mounted(backup: BackupDir) -> None:
+    """A class-scoped reseed resets this directory while a session-scoped container holds it as
+    a bind mount. If the reset replaced the directory the container would go on writing into an
+    unlinked inode: every export would land nowhere the host can see, and `assert_export` would
+    report "the model never exported" about a model that did. Identity, not just contents."""
+    backup.reset()
+    before = backup.path.stat().st_ino
+    (backup.path / "gramps-export-20260801-120000.gramps").write_bytes(b"an earlier class")
+
+    backup.reset()
+
+    assert backup.path.stat().st_ino == before
+    assert set(backup.listing()) == {"tree.gramps"}
+
+
+def test_the_reset_clears_a_leftover_subdirectory(backup: BackupDir) -> None:
+    """In-place emptying has to reach a directory too; `unlink` alone would leave it standing
+    and the declared-inputs check would fail on the *second* reset rather than the first."""
+    backup.reset()
+    (backup.path / "leftovers").mkdir()
+    (backup.path / "leftovers" / "old.gramps").write_bytes(b"stale")
+
+    backup.reset()
+
+    assert set(backup.listing()) == {"tree.gramps"}
+
+
 def test_the_reset_makes_the_directory_writable_by_the_container(backup: BackupDir) -> None:
     """The MCP container runs as a different uid than the test process, and an export lands
     on the host through the mount — 0777 is the whole reason `test_05` chmods by hand today."""
