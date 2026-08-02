@@ -70,6 +70,9 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `test_00_fixture_xml.py` | T4.5: the committed XML holds the cast's families, and no name contains another |
 | `test_00_id_literals.py` | T4.1: a module that runs against the tree names an id only through the cast |
 | `test_10_seeded_tree.py` | T4.0 acceptance: a class dirties the tree, the next one gets it back — and the seeder had to work for it |
+| `test_20_people.py` | T4.2: the people/name tools, cut to the cases whose answer lives in the server |
+| `test_21_blog_backup.py` | T4.3: the blog chain, and export → wipe → restore proving the backup is a way back |
+| `test_40_families.py` | T4.4: parent slots, the reverse references three docstrings promise, traversal |
 
 Phase 0 created the probe and the harness skeleton; T1.1 added the gate, T1.2 the reaper, T1.3
 the restartable instance, T1.4 the oracle plus the token audit, T1.5 the container and T1.6 the
@@ -96,6 +99,20 @@ its continuation lines indented and from a modern host without. All three readin
 dedented — the text is pinned, its leading whitespace deliberately is not. Pinning raw bytes
 would have made the suite red on every machine whose interpreter differs from the image's,
 which is the harness accusing the product.
+
+Phase 4 is the three Stage-1 matrices. They are **43 cases, not the 135 the design enumerated**:
+the selection criterion was decidability rather than coverage — a case earns a live instance only
+if the answer lives in the server's behaviour, because the mocked unit suite can confirm the body
+the product built and nothing more, and Stage 2 drives each tool along exactly one happy path. The
+per-case reasoning is in `.claude/worknotes/e2e-suite/phase-4/triage-product-risk.md`.
+
+**One measurement from Phase 4 is worth carrying:** every field write is a read-modify-write that
+reads a *collection* projection (`?gramps_id=`) and PUTs it back as the whole object, and the
+server does not merge — a partial body answers 200 and blanks every omitted field. Had the
+collection projection been narrower than the object, every single-field edit would have destroyed
+the difference silently. It is not: both projections were measured byte-identical in all three
+namespaces the product treats this way. Three cases — one per namespace — exist to notice if that
+changes, and they say in their docstrings that they are pins rather than discoveries.
 
 ### The canonical fixture (D2)
 
