@@ -41,9 +41,9 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `stage2/subjects.py` | who a use case is about, selected from the tree — **never by id** (T2.2) |
 | `stage2/validate.py` | whether a loaded use case would measure anything at all |
 | `stage2/leak_lint.py` | no prompt may name the tool it expects (T2.7) — runs in `lint.yml` |
-| `fixtures/synthetic-tree.gramps` | the canonical tree (D2): 56 people, 22 families, 23 sources, plain XML |
+| `fixtures/synthetic-tree.gramps` | the canonical tree (D2): 74 people, 27 families, 23 sources, plain XML |
 | `fixtures/cousins-branch.gramps` | the uc19 import input: three people and one family, grown by the same build |
-| `fixtures/cast.py` | every id, the observed counts and two measurements — **no test body may carry an id literal** |
+| `fixtures/cast.py` | every id, the observed counts and two measurements — **no test body may carry an id literal**, linted by `test_00_id_literals.py` |
 | `fixtures/build_fixture.py` | regrows both files with the server's own tools; run rarely |
 | `fixtures/builder.py` | the growing itself: one method per tool, remembering every id it is handed |
 | `fixtures/stage2_subjects.py` | the affordances a well-formed tree cannot supply, one block per use case |
@@ -68,6 +68,7 @@ Reference document: `docs/superpowers/plans/2026-07-30-e2e-test-suite.md`. Decis
 | `test_00_content_digest.py` | T4.0: the content digest sees the field writes the identity one is built not to |
 | `test_00_chain.py` | T4.0: which failure breaks an ordered chain, and what the skip line says |
 | `test_00_fixture_xml.py` | T4.5: the committed XML holds the cast's families, and no name contains another |
+| `test_00_id_literals.py` | T4.1: a module that runs against the tree names an id only through the cast |
 | `test_10_seeded_tree.py` | T4.0 acceptance: a class dirties the tree, the next one gets it back — and the seeder had to work for it |
 
 Phase 0 created the probe and the harness skeleton; T1.1 added the gate, T1.2 the reaper, T1.3
@@ -104,9 +105,9 @@ blog post creates `Blog`. A fixture seeding neither would make the first write i
 test move the tag count by one and read as a failure. Every person in it is invented — the repo
 is public and the real `.gramps` backups are a real family tree.
 
-21 is not a round number: `count_people`/`count_families`/`count_sources` in the product are
+23 is not a round number: `count_people`/`count_families`/`count_sources` in the product are
 `len(unpaginated list)` against a default pagesize of 20, so at 20 or fewer the pagination
-assumption is untestable.
+assumption is untestable. Sources are the tightest of the three, three above the page.
 
 Stored as plain XML. Measured: two exports of an unchanged tree are byte-identical *after*
 ungzipping, so the UUID that makes a `.gramps` file unreproducible sits in the gzip wrapper,

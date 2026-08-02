@@ -36,8 +36,24 @@ TREE_FILE = Path(__file__).parent / "fixtures" / "synthetic-tree.gramps"
 COUSINS_FILE = Path(__file__).parent / "fixtures" / cast.COUSINS["filename"]
 PAGESIZE = 20
 UNKNOWN_SEX = 2
-# uc14's household, by id rather than as "the only one-parent family" — T4.5 added two more.
-UC14_HOUSEHOLD = "F0021"
+
+
+def cast_person(given: str, surname: str) -> str:
+    """The id of the one person in the cast with that name.
+
+    The way anything in this suite is allowed to name a fixture record: by the thing that
+    survives a regrow. Ids do not — T4.5 moved every id past its insertion point — so a test
+    that spells one changes subject silently instead of going red, which is what
+    `test_00_id_literals.py` now refuses. That "the one" is a fact and not a hope is the
+    naming invariant `test_00_fixture_xml.py` asserts.
+    """
+    matches = [
+        person["gramps_id"]
+        for person in cast.PEOPLE
+        if person["first_name"] == given and person["surname"] == surname
+    ]
+    assert len(matches) == 1, f"{given} {surname} is not one person in the cast"
+    return matches[0]
 
 
 @pytest.fixture(scope="module")
@@ -180,13 +196,20 @@ def test_the_household_missing_a_parent_reads_back_missing_it(imported: GrampsRe
     That the surviving parent lands in the mother slot is the product's documented rule for a
     single female spouse (`server.py:134-141`), so it is asserted rather than assumed.
 
-    Identified by id rather than as "the only one-parent household": T4.5 added two more, and
-    one of them fills the *father* slot instead, so that both orientations exist and no case can
-    pass by assuming the empty slot is always the father's."""
+    Identified by the person uc14 is declared to be about, not as "the only one-parent
+    household": T4.5 added two more, and one of them fills the *father* slot instead, so that
+    both orientations exist and no case can pass by assuming the empty slot is the father's.
+    Selection by membership rather than by slot, because the slot is what is under test."""
+    mother = cast_person(*s2.HOUSEHOLD_MOTHER[:2])
     households = [family for family in cast.FAMILIES if family["spouse_b"] is None]
     assert len(households) == 3, "the one-parent households of the fixture have changed"
+    declared = [
+        family for family in households if mother in (family["spouse_a"], family["spouse_b"])
+    ]
+    assert len(declared) == 1, "uc14's household is not exactly one family in the cast"
+
     families = {family["gramps_id"]: family for family in imported.families()}
-    household = families[UC14_HOUSEHOLD]
+    household = families[declared[0]["gramps_id"]]
 
     assert household["mother_handle"], "the single spouse is not in the mother slot"
     assert not household["father_handle"], "the slot uc14 exists to fill is already taken"

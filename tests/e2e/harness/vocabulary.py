@@ -164,9 +164,9 @@ def scan_cases(tree: ast.Module, origin: str) -> list[Case]:
             )
         )
 
-    module_markers = _module_markers(tree)
+    inherited = module_markers(tree)
     for node in tree.body:
-        visit(node, module_markers)
+        visit(node, inherited)
     return found
 
 
@@ -220,7 +220,14 @@ def unmarked(cases: Iterable[Case]) -> list[Case]:
     ]
 
 
-def _module_markers(tree: ast.Module) -> frozenset[str]:
+def module_markers(tree: ast.Module) -> frozenset[str]:
+    """The markers a module applies to everything in it — `pytestmark`, in either spelling.
+
+    Public because it answers a question outside this module's subject: *which* leg a module
+    belongs to. `test_00_id_literals.py` scopes itself to the `gramps`-marked modules, and
+    reading the marker with the parser that already exists here is the difference between one
+    scanner and two that disagree the day somebody writes `pytestmark = [ ... ]`.
+    """
     names: set[str] = set()
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(
